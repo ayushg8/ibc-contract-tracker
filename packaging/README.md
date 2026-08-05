@@ -248,8 +248,9 @@ finds it and offers her a button. **Nothing installs itself.**
    finished tarball into a clean directory, starts it and waits for a real `200`
    on `/ibc-ping.txt` before handing it back. A build that exits 0 and then
    cannot serve is exactly what the rollback machinery would otherwise inherit.
-5. It publishes two tarballs (`darwin-arm64`, `darwin-x64`), `manifest.json` and
-   `manifest-darwin-x64.json`.
+5. It publishes one tarball (`darwin-arm64`) and `manifest.json`. Apple silicon
+   only -- see "One tarball per processor" below for why Intel is gone and what
+   putting it back takes.
 
 Two optional switches, both read at release time:
 
@@ -285,7 +286,7 @@ her Mac. Each script is only installed if it parses.
 Because `.next` and `node_modules` are prebuilt, an update costs her a download
 rather than a build -- which is the same reason the first install does too.
 
-### One tarball per processor, one manifest each
+### One tarball per processor, and there is one processor
 
 `node_modules` carries platform-gated packages -- `@next/swc-darwin-arm64` is
 not the same file as the x64 one -- so an arm64 payload on an Intel Mac is a
@@ -295,13 +296,25 @@ so there is one manifest per processor:
 | Asset | For | Payload URL |
 | --- | --- | --- |
 | `manifest.json` | Apple silicon | `asset:ibc-contracts-<v>-darwin-arm64.tar.gz` |
-| `manifest-darwin-x64.json` | Intel | the full https download URL |
 
 `manifest.json` is the fixed name a `githubRepo` source looks for, and the
-`asset:` form resolves through the Releases API, so it works for a private
-repository too. **On an Intel Mac**, point `manifestUrl` at
-`.../releases/latest/download/manifest-darwin-x64.json` instead; a plain URL
-needs the release to be public.
+`asset:` form resolves through the Releases API, so it works whether the
+repository is public or private.
+
+**Intel is not built, deliberately.** The matrix used to have a second entry,
+`macos-13` for x64, under a comment promising the build would fail loudly rather
+than quietly ship one architecture. What happened was neither: the arm64 leg
+finished in four minutes and the x64 leg sat QUEUED for half an hour with no
+error to read, because GitHub is winding its Intel runners down. A leg that
+never schedules is not a loud failure -- it is a release that never happens, and
+the release is the only route an update has to her Mac.
+
+It costs nothing today. The installer she was sent is arm64-only, her Mac is
+Apple silicon, and an x64 update payload has no installed copy anywhere to
+update. To put Intel back: add the matrix entry with whatever label GitHub
+offers for Intel then, restore `write_manifest x64` and the two x64 lines in the
+publish step, and build the x64 *installer* on an Intel Mac -- the workflow only
+ever produced the update payload, never the installer.
 
 ```json
 { "schemaVersion": 1, "version": "1.1.0",
@@ -312,14 +325,14 @@ needs the release to be public.
 ```
 
 The `sha256` is checked before a single byte is unpacked, the same rule the Node
-download follows. The workflow validates both manifests against that shape
-before publishing, then fetches the published one over the network and checks
-the version it reports, because "published" is a claim.
+download follows. The workflow validates the manifest against that shape before
+publishing, then fetches the published one back through the Releases API -- the
+same two hops `resolveFromGithub()` walks -- and checks the version it reports,
+because "published" is a claim.
 
-The two runner labels (`macos-14` for arm64, `macos-13` for x64) are pinned, and
-each job asserts `uname -m` matches the architecture it is labelling. If GitHub
-retires a label the matrix fails loudly; it never quietly ships one processor's
-tarball under the other's name.
+The runner label (`macos-14`) is pinned and the job asserts `uname -m` matches
+the architecture it is labelling, so a runner GitHub has quietly moved to
+different silicon cannot ship one processor's tarball under the other's name.
 
 ### Pointing her copy at the releases
 

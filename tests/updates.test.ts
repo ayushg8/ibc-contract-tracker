@@ -762,12 +762,29 @@ describe('release.yml', () => {
     expect(body).toMatch(/verify:\n\s+name: Typecheck, test, build\n\s+runs-on: macos-/);
   });
 
-  it('builds on macOS, once per processor, and checks the runner really is one', () => {
+  it('builds on macOS and checks the runner really is the processor it claims', () => {
     expect(body).toContain('runner: macos-14');
-    expect(body).toContain('runner: macos-13');
     expect(body).toContain('arch: arm64');
-    expect(body).toContain('arch: x64');
     expect(body).toContain('uname -m');
+  });
+
+  it('publishes one architecture, and says so rather than leaving it to be noticed', () => {
+    // The matrix had a second entry, macos-13 for x64, under a comment
+    // promising it would "fail loudly rather than quietly ship one
+    // architecture". It did neither: the arm64 leg finished in four minutes
+    // and the x64 leg sat QUEUED for half an hour with no error, because
+    // GitHub is retiring its Intel runners. A leg that never schedules is not
+    // a loud failure, it is a release that never happens -- and the release is
+    // the only route an update has to her Mac.
+    expect(body).not.toContain('runner: macos-13');
+    expect(body).not.toContain('manifest-darwin-x64.json');
+    // The invocation, not the substring: the note below on how to put Intel
+    // back names `write_manifest x64`, and instructions for restoring
+    // something must not read as the thing still being there.
+    expect(body).not.toMatch(/^\s*write_manifest x64\b/m);
+    // Removed on purpose is a different thing from removed by accident, and
+    // only one of them leaves instructions.
+    expect(body).toContain('TO PUT INTEL BACK');
   });
 
   it('builds its payload with the one payload builder', () => {
@@ -820,9 +837,9 @@ describe('release.yml', () => {
     expect(body).toMatch(/\[ "\$\{#sha\}" -eq 64 \]/);
     expect(body).toContain('shasum -a 256');
     // One per processor: node_modules is platform-gated, and the schema
-    // describes exactly one payload.
+    // describes exactly one payload. There is one processor -- see the
+    // one-architecture test below.
     expect(body).toContain('write_manifest arm64 manifest.json');
-    expect(body).toContain('write_manifest x64 manifest-darwin-x64.json');
     // asset: resolves through the Releases API, so a private repo works too.
     expect(body).toContain('"asset:ibc-contracts-${VERSION}-darwin-arm64.tar.gz"');
   });

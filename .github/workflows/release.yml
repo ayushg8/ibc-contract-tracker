@@ -136,12 +136,31 @@ jobs:
         run: npx next build
 
   # ---------------------------------------------------------------------------
-  # 2. Build the payload, on macOS, once per processor.
+  # 2. Build the payload, on macOS.
   #
   # It has to be macOS: node_modules carries platform-gated optional packages,
   # and @next/swc-linux-x64-gnu on an Apple laptop is a tracker that will not
-  # start. Two runners because install.command supports both processors and
-  # neither tarball can run on the other.
+  # start.
+  #
+  # APPLE SILICON ONLY, DELIBERATELY, AND SAID OUT LOUD.
+  #
+  # This used to be a two-entry matrix, macos-14 for arm64 and macos-13 for x64,
+  # with a comment promising the build would "fail loudly rather than quietly
+  # ship one architecture". What happened instead was neither: the arm64 leg
+  # finished in four minutes and the x64 leg sat QUEUED for half an hour with no
+  # error to read, because GitHub is winding its Intel runners down. A leg that
+  # never schedules is not a loud failure, it is a release that never happens --
+  # and the release is the only way an update reaches her Mac.
+  #
+  # Dropping x64 costs nothing today: the installer she was sent is arm64-only
+  # (make-distributable.sh can build one architecture, on the machine it runs
+  # on), her Mac is Apple silicon, and an x64 update payload therefore has no
+  # installed copy anywhere to update.
+  #
+  # TO PUT INTEL BACK: add the second matrix entry with whatever label GitHub
+  # offers for Intel then, restore `write_manifest x64` and the two x64 lines in
+  # the publish step, and build the x64 installer on an Intel Mac -- this
+  # workflow only ever produced the UPDATE payload for it, never the installer.
   # ---------------------------------------------------------------------------
   package:
     name: Package (${{ matrix.arch }})
@@ -151,12 +170,8 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          # If GitHub retires either label, the matrix fails loudly rather
-          # than quietly shipping one architecture. See packaging/README.md.
           - runner: macos-14
             arch: arm64
-          - runner: macos-13
-            arch: x64
     env:
       VERSION: ${{ needs.verify.outputs.version }}
       TARBALL: ibc-contracts-${{ needs.verify.outputs.version }}-darwin-${{ matrix.arch }}.tar.gz
@@ -263,7 +278,6 @@ jobs:
         run: |
           set -euo pipefail
           cd assets
-          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
           published=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           # An escape hatch for a release the update mechanism itself cannot
@@ -285,11 +299,12 @@ jobs:
           # one payload: node_modules carries platform-gated packages, so an
           # arm64 tree on an Intel Mac is a tracker that will not start.
           #
+          # There is one architecture at the moment -- see the note on the
+          # `package` job for why Intel is gone and what putting it back takes.
           # manifest.json is the arm64 one, because that is the fixed asset name
           # a githubRepo source looks for. Its payload URL uses the `asset:`
-          # form, which resolves through the Releases API and therefore also
-          # works for a private repository. The x64 manifest carries a plain
-          # https URL, for an Intel Mac configured with manifestUrl.
+          # form, which resolves through the Releases API and therefore works
+          # whether the repository is public or private.
           write_manifest() {
             arch="$1"; out="$2"; url="$3"
             file="ibc-contracts-${VERSION}-darwin-${arch}.tar.gz"
@@ -316,8 +331,6 @@ jobs:
 
           write_manifest arm64 manifest.json \
             "asset:ibc-contracts-${VERSION}-darwin-arm64.tar.gz"
-          write_manifest x64 manifest-darwin-x64.json \
-            "$base/ibc-contracts-${VERSION}-darwin-x64.tar.gz"
 
       - name: The manifests must be what the client will accept
         shell: bash
@@ -329,7 +342,7 @@ jobs:
           # itself is pinned by tests/update.test.ts, which ran in `verify`.
           node -e '
             const { readFileSync } = require("node:fs");
-            const files = ["assets/manifest.json", "assets/manifest-darwin-x64.json"];
+            const files = ["assets/manifest.json"];
             for (const f of files) {
               const m = JSON.parse(readFileSync(f, "utf8"));
               const bad = (why) => { throw new Error(f + ": " + why); };
@@ -357,9 +370,7 @@ jobs:
             --notes "${NOTES:-Maintenance update.}" \
             --verify-tag \
             manifest.json \
-            manifest-darwin-x64.json \
-            ibc-contracts-"$VERSION"-darwin-arm64.tar.gz \
-            ibc-contracts-"$VERSION"-darwin-x64.tar.gz
+            ibc-contracts-"$VERSION"-darwin-arm64.tar.gz
 
       - name: Prove the client can reach the manifest
         shell: bash
@@ -371,13 +382,14 @@ jobs:
           # src/lib/update/manifest.ts -- releases/latest, then the manifest.json
           # asset by its API url with Accept: application/octet-stream -- rather
           # than the browser-facing /releases/latest/download/manifest.json it
-          # used to curl unauthenticated.
+          # used to curl.
           #
-          # That old form is a 404 on a private repository no matter what token
-          # is held, because it is not an API endpoint. This repo IS private, so
-          # the final gate of every release would have failed on a release that
-          # was in fact perfectly good -- and the one shape it was proving was
-          # the x64/manifestUrl one, not the arm64/githubRepo one her Mac uses.
+          # Two reasons. That old form proved the manifestUrl shape, which is
+          # not the shape her Mac uses; her source.json holds `githubRepo`, and
+          # this is the path that resolves. And it is a 404 on a private
+          # repository whatever token is presented, because it is not an API
+          # endpoint -- this repository is public today, but the gate in front
+          # of every release should not quietly depend on that staying true.
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest"
           for attempt in 1 2 3 4 5; do
             if release=$(curl -fsSL --max-time 30 \
