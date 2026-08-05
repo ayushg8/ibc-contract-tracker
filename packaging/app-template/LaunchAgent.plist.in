@@ -34,7 +34,7 @@
 	     not one: she is waiting on it the moment she clicks the icon. macOS
 	     applies hard disk-I/O throttling to Background jobs, and under it this
 	     server took 18.9s to boot instead of 0.6s and then failed to answer a
-	     single request inside two minutes -- measured, and it looks exactly
+	     single request inside two minutes (measured), and it looks exactly
 	     like a hang. -->
 	<key>ProcessType</key>
 	<string>Interactive</string>

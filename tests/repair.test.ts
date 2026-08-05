@@ -36,6 +36,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { lintPlist } from './plist-support';
+
 const root = mkdtempSync(join(tmpdir(), 'ibc-repair-'));
 process.env['IBC_DATA_DIR'] = join(root, 'data');
 process.env['IBC_LAUNCH_AGENTS_DIR'] = join(root, 'agents');
@@ -1005,7 +1007,7 @@ describe('the retry LaunchAgent', () => {
   it('is a plist macOS will actually load', () => {
     const file = join(tempDir('plist'), 'agent.plist');
     writeFileSync(file, schedule.renderRepairPlist(vars));
-    expect(() => execFileSync('/usr/bin/plutil', ['-lint', file], { stdio: 'pipe' })).not.toThrow();
+    expect(() => lintPlist(file)).not.toThrow();
   });
 
   it('fires at the reset time and never at load', () => {
@@ -1038,7 +1040,7 @@ describe('the retry LaunchAgent', () => {
     expect(plist).toContain('/Users/a&amp;b&lt;c&gt;');
     const file = join(tempDir('plist'), 'agent.plist');
     writeFileSync(file, plist);
-    expect(() => execFileSync('/usr/bin/plutil', ['-lint', file], { stdio: 'pipe' })).not.toThrow();
+    expect(() => lintPlist(file)).not.toThrow();
   });
 
   it('clamps a reset time that has already passed', () => {

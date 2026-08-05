@@ -44,6 +44,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { fillPlistTemplate, lintPlist } from './plist-support';
+
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PKG = join(ROOT, 'packaging');
 const TPL = join(PKG, 'app-template');
@@ -446,10 +448,9 @@ describe('the LaunchAgent', () => {
 function expectValidPlistTemplate(file: string): void {
   const dir = mkdtempSync(join(tmpdir(), 'ibc-plist-'));
   try {
-    const filled = read(file).replace(/@@[A-Z_]+@@/g, 'placeholder');
     const out = join(dir, 'test.plist');
-    execFileSync('/bin/sh', ['-c', `cat > "$1"`, 'sh', out], { input: filled });
-    expect(() => execFileSync('plutil', ['-lint', out], { stdio: 'pipe' })).not.toThrow();
+    execFileSync('/bin/sh', ['-c', `cat > "$1"`, 'sh', out], { input: fillPlistTemplate(read(file)) });
+    expect(() => lintPlist(out)).not.toThrow();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

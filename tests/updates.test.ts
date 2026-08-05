@@ -22,6 +22,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { fillPlistTemplate, readPlist } from './plist-support';
+
 import {
   describeCadence,
   describeInstalled,
@@ -460,17 +462,13 @@ describe('the Updates tab is reachable', () => {
 
 /* ──────────────────────── the fortnightly agent ──────────────────────── */
 
-/** The plist with its tokens filled in, as JSON, via plutil. No dependency. */
+/** The plist with its tokens filled in, as JSON. Parser per ./plist-support. */
 function filledPlist(): Record<string, unknown> {
   const dir = mkdtempSync(join(tmpdir(), 'ibc-update-plist-'));
   try {
     const file = join(dir, 'agent.plist');
-    writeFileSync(file, read(PLIST).replace(/@@[A-Z_]+@@/g, 'placeholder'));
-    execFileSync('plutil', ['-lint', file], { stdio: 'pipe' });
-    const json = execFileSync('plutil', ['-convert', 'json', '-o', '-', file], {
-      encoding: 'utf8',
-    });
-    return JSON.parse(json) as Record<string, unknown>;
+    writeFileSync(file, fillPlistTemplate(read(PLIST)));
+    return readPlist(file);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
