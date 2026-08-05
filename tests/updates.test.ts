@@ -752,6 +752,16 @@ describe('release.yml', () => {
     expect(builder).toMatch(/while \[ "\$\(date \+%s\)" -lt "\$DEADLINE" \]/);
   });
 
+  it('runs the gate on macOS too, because eleven of these tests run shell scripts', () => {
+    // Not a style preference. tests/update.test.ts applies a real update and
+    // rolls it back, tests/packaging.test.ts runs install.command against a
+    // fabricated download, tests/updates.test.ts runs the LaunchAgent's own
+    // script against a live server. Those are macOS programs. On ubuntu-latest
+    // eleven of them failed, so `verify` was red on every tag and the release
+    // that feeds her updater could never be cut.
+    expect(body).toMatch(/verify:\n\s+name: Typecheck, test, build\n\s+runs-on: macos-/);
+  });
+
   it('builds on macOS, once per processor, and checks the runner really is one', () => {
     expect(body).toContain('runner: macos-14');
     expect(body).toContain('runner: macos-13');

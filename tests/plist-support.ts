@@ -3,17 +3,20 @@
  *
  * WHY THIS FILE EXISTS
  *
- * Four separate tests shelled out to `plutil`, which ships only with macOS.
- * `verify` -- the job every tag push must pass before .github/workflows/release.yml
- * will publish anything -- runs on ubuntu-latest. So the gate in front of every
- * release failed on the absence of a tool, not on anything wrong with the
- * release, and the update mechanism on Bonnie's Mac had no way to be fed.
+ * Four separate tests shelled out to `plutil`, which ships only with macOS,
+ * and the release workflow's `verify` job ran on ubuntu-latest -- so the gate
+ * in front of every publish failed on the absence of a tool rather than on
+ * anything wrong with the release.
  *
- * The fallback is python3's `plistlib`: a real plist parser, present on
- * ubuntu-latest and on every Mac with the command line tools. It is STRICTER
- * than plutil, which is a feature -- it immediately caught a `--` inside an XML
- * comment in LaunchAgent.plist.in (illegal in XML, tolerated by plutil) that had
- * sat there unnoticed.
+ * `verify` has since moved to macos-14, because eleven OTHER tests in this
+ * suite genuinely need macOS: they run update.sh and install.command rather
+ * than reading them. So plutil is present again on the path that matters, and
+ * this file is no longer load-bearing for CI.
+ *
+ * It stays anyway, for two reasons. The suite should be runnable by anyone on
+ * any machine, and python3's `plistlib` is STRICTER than plutil -- it
+ * immediately caught a `--` inside an XML comment in LaunchAgent.plist.in
+ * (illegal in XML, tolerated by plutil) that had sat there unnoticed.
  *
  * If neither parser exists these functions THROW. They must never skip: a green
  * run on a plist nobody parsed is worse than a red one, because a plist launchd

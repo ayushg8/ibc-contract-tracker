@@ -35,10 +35,22 @@ jobs:
   #
   # Everything downstream is `needs: verify`, so a failure here means no
   # release, no assets, and nothing for the update client to find.
+  #
+  # macOS, not ubuntu, and this was learned by watching it happen: eleven tests
+  # in this suite do not read the shell scripts, they RUN them -- update.sh
+  # applying a real update and rolling it back, install.command against a
+  # fabricated download, the LaunchAgent's own script against a live server.
+  # Those scripts are macOS programs. On ubuntu-latest they failed for reasons
+  # that had nothing to do with the release, so the gate in front of publishing
+  # was permanently red and no tag could ever produce a manifest.
+  #
+  # Running them here on the same OS family Bonnie runs is also the only way the
+  # result means anything: a rollback that works on Linux says nothing about a
+  # rollback on her Mac. Free minutes, because this repository is public.
   # ---------------------------------------------------------------------------
   verify:
     name: Typecheck, test, build
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     outputs:
       version: ${{ steps.version.outputs.version }}
       node: ${{ steps.pins.outputs.node }}
