@@ -844,6 +844,19 @@ describe('release.yml', () => {
     expect(body).toContain('"asset:ibc-contracts-${VERSION}-darwin-arm64.tar.gz"');
   });
 
+  it('reads the tag message from the tag object, not from whatever checkout left behind', () => {
+    // actions/checkout resolves a tag push to its commit and writes
+    // refs/tags/<tag> as a LIGHTWEIGHT ref even at fetch-depth 0, and
+    // %(contents:...) on a lightweight tag falls through to the COMMIT. v1.0.0
+    // published with a release note that began "The matrix had two entries,
+    // macos-14 for arm64 and macos-13 for x64" -- a sentence about CI runners,
+    // shown to the CFO being asked to install the thing.
+    expect(body).toContain('git fetch --force --no-tags origin "+refs/tags/${tag}:refs/tags/${tag}"');
+    expect(body).toContain('git cat-file -t "$tag"');
+    expect(body).toContain('is a lightweight tag and carries no message');
+    expect(body).toContain('has an empty message');
+  });
+
   it('refuses a tag that disagrees with the version the app reports', () => {
     expect(body).toContain('IBC_VERSION');
     expect(body).toMatch(/if \[ "\$version" != "\$declared" \]/);

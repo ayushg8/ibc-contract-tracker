@@ -103,9 +103,27 @@ jobs:
             exit 1
           fi
           echo "version=$version" >>"$GITHUB_OUTPUT"
+
           # The annotated tag message is the release note. One or two plain
           # sentences; the Updates tab shows it verbatim under the button.
+          #
+          # The fetch is load-bearing and was found the hard way. actions/checkout
+          # resolves a tag push to its commit and writes refs/tags/<tag> as a
+          # LIGHTWEIGHT ref, even at fetch-depth 0. `%(contents:...)` on a
+          # lightweight tag falls through to the commit -- so v1.0.0 published
+          # with a release note that opened "The matrix had two entries,
+          # macos-14 for arm64 and macos-13 for x64", which is a sentence about
+          # CI runners shown to the CFO who is being asked to install it.
+          git fetch --force --no-tags origin "+refs/tags/${tag}:refs/tags/${tag}"
+          if [ "$(git cat-file -t "$tag")" != "tag" ]; then
+            echo "::error::$tag is a lightweight tag and carries no message. That message is the release note she reads under the Update button. Re-tag: git tag -f -a $tag -m 'One or two plain sentences.' && git push --force origin $tag"
+            exit 1
+          fi
           notes=$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$tag" | sed -e 's/[[:space:]]*$//')
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "::error::$tag has an empty message. See above."
+            exit 1
+          fi
           {
             echo 'notes<<IBC_NOTES_EOF'
             echo "$notes"
