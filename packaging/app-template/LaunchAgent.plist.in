@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>@@LABEL@@</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>@@SERVER_SH@@</string>
+	</array>
+
+	<!-- The server is up before she ever clicks the icon, so clicking it opens
+	     a window instead of booting a server. -->
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- Restart on a crash, but NOT on a clean exit. A clean exit is how
+	     server.sh reports "another copy is already serving" and how it obeys
+	     launchctl bootout; restarting either one would be a loop. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+
+	<!-- Floor on restart frequency, so a runtime that cannot start at all
+	     fails slowly and visibly rather than burning the CPU. -->
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+
+	<!-- Interactive, NOT Background. This looks like a background job and is
+	     not one: she is waiting on it the moment she clicks the icon. macOS
+	     applies hard disk-I/O throttling to Background jobs, and under it this
+	     server took 18.9s to boot instead of 0.6s and then failed to answer a
+	     single request inside two minutes -- measured, and it looks exactly
+	     like a hang. -->
+	<key>ProcessType</key>
+	<string>Interactive</string>
+
+	<key>StandardOutPath</key>
+	<string>@@STDOUT@@</string>
+	<key>StandardErrorPath</key>
+	<string>@@STDERR@@</string>
+
+	<key>WorkingDirectory</key>
+	<string>@@APP_DIR@@</string>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>@@HOME@@</string>
+		<!-- launchd hands a job almost no PATH. The CLI engine shells out to
+		     `claude`, which lives in one of these. -->
+		<key>PATH</key>
+		<string>@@PATH@@</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+	</dict>
+</dict>
+</plist>

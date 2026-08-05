@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>@@LABEL@@</string>
+
+	<!-- Resumes a repair that stopped on the Claude subscription limit. The
+	     script asks the app; the app decides whether anything is owed. -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>@@REPAIR_SH@@</string>
+		<string>resume</string>
+	</array>
+
+	<!-- Loading this agent must never start a repair. Only the calendar entry
+	     below may, and it fires once, at the moment the limit resets. -->
+	<key>RunAtLoad</key>
+	<false/>
+
+	<!-- launchd runs a calendar job it missed as soon as the Mac wakes, which is
+	     the whole reason this is not an in-process timer: the limit resets at
+	     9pm and the lid is shut at 6pm. -->
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Month</key>
+		<integer>@@MONTH@@</integer>
+		<key>Day</key>
+		<integer>@@DAY@@</integer>
+		<key>Hour</key>
+		<integer>@@HOUR@@</integer>
+		<key>Minute</key>
+		<integer>@@MINUTE@@</integer>
+	</dict>
+
+	<!-- A crashed repair must not be respawned in a loop against a subscription
+	     that is still capped. The state file decides when to try again. -->
+	<key>KeepAlive</key>
+	<false/>
+
+	<!-- Genuinely background, unlike the server. She is not waiting on this, and
+	     it must not compete with whatever she is actually doing. -->
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>5</integer>
+
+	<key>StandardOutPath</key>
+	<string>@@STDOUT@@</string>
+	<key>StandardErrorPath</key>
+	<string>@@STDERR@@</string>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>@@HOME@@</string>
+		<!-- launchd hands a job almost no PATH, and this one has to find both
+		     curl and the app's own runtime. -->
+		<key>PATH</key>
+		<string>@@PATH@@</string>
+	</dict>
+</dict>
+</plist>

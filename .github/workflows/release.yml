@@ -1,0 +1,392 @@
+# Cut a release of IBC Contracts.
+#
+# Push a tag, get two verified tarballs and a manifest on a GitHub Release.
+# The tracker on Bonnie's Mac reads the manifest, downloads the tarball for her
+# processor, checks the SHA256 against the manifest and swaps the payload.
+#
+# THE ONE RULE THIS FILE ENFORCES
+# Nothing is published unless it typechecks, passes the tests, builds, AND is
+# watched serving a real request out of the exact tarball that will be
+# published. The rollback-and-self-repair apparatus downstream exists because
+# updates can break things; feeding it a build nobody ran would be indefensible.
+#
+# The launcher bug that shaped this: launchctl returned 0 having merely accepted
+# a request, and the code believed it. An exit code is a claim. `next build`
+# exiting 0 is a claim too. The smoke step is the evidence.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# The only write this workflow needs. It creates a Release and uploads assets.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Refuse early.
+  #
+  # Everything downstream is `needs: verify`, so a failure here means no
+  # release, no assets, and nothing for the update client to find.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      node: ${{ steps.pins.outputs.node }}
+      node_bare: ${{ steps.pins.outputs.node_bare }}
+      bundle_id: ${{ steps.pins.outputs.bundle_id }}
+      notes: ${{ steps.version.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Annotated tag messages are the release notes she reads. A shallow
+          # clone has the tag but not its message.
+          fetch-depth: 0
+
+      - name: Read the pins out of common.sh
+        id: pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          common=packaging/app-template/bin/common.sh
+          node=$(sed -n 's/^IBC_NODE_VERSION="\(v[0-9.]*\)".*/\1/p' "$common")
+          app=$(sed -n 's/^IBC_VERSION="\([0-9.]*\)".*/\1/p' "$common")
+          bundle=$(sed -n 's/^IBC_BUNDLE_ID="\([^"]*\)".*/\1/p' "$common")
+          for pair in "node:$node" "app:$app" "bundle:$bundle"; do
+            case "$pair" in
+              *:) echo "::error::${pair%%:*} is not readable from $common"; exit 1 ;;
+            esac
+          done
+          echo "node=$node" >>"$GITHUB_OUTPUT"
+          # setup-node wants it without the leading v; the manifest wants it
+          # exactly as common.sh writes it, because that is the string the
+          # installer downloads from nodejs.org.
+          echo "node_bare=${node#v}" >>"$GITHUB_OUTPUT"
+          echo "app_version=$app" >>"$GITHUB_OUTPUT"
+          echo "bundle_id=$bundle" >>"$GITHUB_OUTPUT"
+
+      - name: The tag and the app must agree on the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          declared="${{ steps.pins.outputs.app_version }}"
+          # Bonnie's Settings screen reads the version out of the installed
+          # bundle, which is stamped from IBC_VERSION. If the tag and IBC_VERSION
+          # disagree, the tracker reports a version that does not exist and
+          # "is there a newer one" is wrong forever after. Cheaper to fail here.
+          if [ "$version" != "$declared" ]; then
+            echo "::error::Tag $tag says $version but IBC_VERSION in packaging/app-template/bin/common.sh says $declared. Bump IBC_VERSION, commit, retag."
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          # The annotated tag message is the release note. One or two plain
+          # sentences; the Updates tab shows it verbatim under the button.
+          notes=$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$tag" | sed -e 's/[[:space:]]*$//')
+          {
+            echo 'notes<<IBC_NOTES_EOF'
+            echo "$notes"
+            echo 'IBC_NOTES_EOF'
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          # Exactly the runtime that ships inside the .app, so a test that
+          # passes here is a test that passed on what she runs.
+          node-version: ${{ steps.pins.outputs.node_bare }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        # The slow tests -- the backup one deflates a fixture archive, the
+        # packaging one applies two real updates end to end -- declare their own
+        # bounds, so a plain `vitest run` is clean on a laptop. This flag stays
+        # as headroom for a shared runner that is slower than one. Raising a
+        # bound is honest; skipping a slow test on the release path would not be.
+        run: npx vitest run --testTimeout=30000
+
+      - name: Build
+        run: npx next build
+
+  # ---------------------------------------------------------------------------
+  # 2. Build the payload, on macOS, once per processor.
+  #
+  # It has to be macOS: node_modules carries platform-gated optional packages,
+  # and @next/swc-linux-x64-gnu on an Apple laptop is a tracker that will not
+  # start. Two runners because install.command supports both processors and
+  # neither tarball can run on the other.
+  # ---------------------------------------------------------------------------
+  package:
+    name: Package (${{ matrix.arch }})
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # If GitHub retires either label, the matrix fails loudly rather
+          # than quietly shipping one architecture. See packaging/README.md.
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: x64
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      TARBALL: ibc-contracts-${{ needs.verify.outputs.version }}-darwin-${{ matrix.arch }}.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The runner must actually be the processor it claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64) actual=arm64 ;;
+            x86_64) actual=x64 ;;
+            *) echo "::error::unknown processor $(uname -m)"; exit 1 ;;
+          esac
+          # GitHub has silently moved a runner label to different silicon
+          # before. A tarball labelled x64 that is really arm64 fails on her
+          # Mac and nowhere else.
+          if [ "$actual" != "${{ matrix.arch }}" ]; then
+            echo "::error::runner ${{ matrix.runner }} is $actual, not ${{ matrix.arch }}"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.verify.outputs.node_bare }}
+          cache: npm
+
+      # ---------------------------------------------------------------------
+      # ONE PAYLOAD BUILDER, NOT TWO.
+      #
+      # packaging/make-distributable.sh builds the tarball, and it is the same
+      # script Ayush runs to produce the .zip he hands Bonnie in person. So the
+      # thing she installs from and the thing she updates through are the same
+      # format, produced by the same code, and cannot drift apart -- which they
+      # did the moment this workflow had its own copy of the assembly steps.
+      #
+      # It does everything the three steps that used to be here did: npm ci,
+      # the liveness marker, next build, npm ci --omit=dev, the exclusion list,
+      # every bin/ script by iterating the directory, the three files update.sh
+      # refuses a payload without, the env-file check -- and then it unpacks the
+      # finished tarball into a clean directory, starts it and waits for a real
+      # 200 on /ibc-ping.txt before it will hand the file back. A build that
+      # exits 0 and cannot serve is exactly what the rollback machinery would
+      # otherwise inherit.
+      # ---------------------------------------------------------------------
+      - name: Build the payload (and watch it serve a request)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh packaging/make-distributable.sh --payload-only --out "$TARBALL"
+          test -f "$TARBALL"
+          test -f "$TARBALL.sha256"
+          test -f "$TARBALL.size"
+
+      - name: Checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Written by the builder; re-derived here rather than trusted, because
+          # a checksum that describes a different file is worse than none.
+          got=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
+          test "$got" = "$(cat "$TARBALL.sha256")" ||
+            { echo "::error::the payload does not match its own checksum"; exit 1; }
+          test "$(wc -c <"$TARBALL" | tr -d ' ')" = "$(cat "$TARBALL.size")"
+          cat "$TARBALL.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payload-${{ matrix.arch }}
+          path: |
+            ${{ env.TARBALL }}
+            ${{ env.TARBALL }}.sha256
+            ${{ env.TARBALL }}.size
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 3. Publish. Only reachable if verify and both packages passed.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish the release
+    needs: [verify, package]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      NODE: ${{ needs.verify.outputs.node }}
+      NOTES: ${{ needs.verify.outputs.notes }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: payload-*
+          merge-multiple: true
+          path: assets
+
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - name: Write the manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd assets
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          published=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # An escape hatch for a release the update mechanism itself cannot
+          # carry -- a new Node floor, a different bundle layout. Any install
+          # older than this is told to reinstall instead of being half-updated.
+          minimum=''
+          if [ -f ../repo/packaging/UPDATE_MINIMUM_VERSION ]; then
+            minimum=$(tr -d '[:space:]' <../repo/packaging/UPDATE_MINIMUM_VERSION)
+          fi
+          # A release Ayush wants her to see as more than routine. Opt in by
+          # putting the word CRITICAL on its own line in the tag message.
+          critical=false
+          if printf '%s' "$NOTES" | grep -qx 'CRITICAL'; then critical=true; fi
+          # `|| true`: grep exits 1 when every line matched, which under
+          # `set -e` would end the release over an empty note.
+          notes=$(printf '%s' "$NOTES" | grep -vx 'CRITICAL' | head -c 2000 || true)
+
+          # One manifest per architecture, because the schema describes exactly
+          # one payload: node_modules carries platform-gated packages, so an
+          # arm64 tree on an Intel Mac is a tracker that will not start.
+          #
+          # manifest.json is the arm64 one, because that is the fixed asset name
+          # a githubRepo source looks for. Its payload URL uses the `asset:`
+          # form, which resolves through the Releases API and therefore also
+          # works for a private repository. The x64 manifest carries a plain
+          # https URL, for an Intel Mac configured with manifestUrl.
+          write_manifest() {
+            arch="$1"; out="$2"; url="$3"
+            file="ibc-contracts-${VERSION}-darwin-${arch}.tar.gz"
+            test -f "$file" || { echo "::error::$file is missing"; exit 1; }
+            sha=$(cat "$file.sha256")
+            size=$(cat "$file.size")
+            [ "${#sha}" -eq 64 ] || { echo "::error::bad checksum for $file"; exit 1; }
+            jq -n \
+              --arg version "$VERSION" \
+              --arg url "$url" \
+              --arg sha "$sha" \
+              --argjson size "$size" \
+              --arg publishedAt "$published" \
+              --arg notes "$notes" \
+              --argjson critical "$critical" \
+              --arg minimum "$minimum" \
+              '{schemaVersion: 1, version: $version, url: $url, sha256: $sha,
+                sizeBytes: $size, publishedAt: $publishedAt, notes: $notes,
+                critical: $critical}
+               + (if $minimum == "" then {} else {minimumSupportedVersion: $minimum} end)' \
+              >"$out"
+            cat "$out"
+          }
+
+          write_manifest arm64 manifest.json \
+            "asset:ibc-contracts-${VERSION}-darwin-arm64.tar.gz"
+          write_manifest x64 manifest-darwin-x64.json \
+            "$base/ibc-contracts-${VERSION}-darwin-x64.tar.gz"
+
+      - name: The manifests must be what the client will accept
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Structural check against the schema in src/lib/update/manifest.ts.
+          # Cheap, and it catches the drift that would otherwise arrive on her
+          # Mac as MANIFEST_INVALID with nothing she can do about it. The parser
+          # itself is pinned by tests/update.test.ts, which ran in `verify`.
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const files = ["assets/manifest.json", "assets/manifest-darwin-x64.json"];
+            for (const f of files) {
+              const m = JSON.parse(readFileSync(f, "utf8"));
+              const bad = (why) => { throw new Error(f + ": " + why); };
+              if (m.schemaVersion !== 1) bad("schemaVersion must be 1");
+              if (!/^\d+\.\d+\.\d+/.test(m.version)) bad("version");
+              if (typeof m.url !== "string" || m.url.length === 0) bad("url");
+              if (!/^[0-9a-f]{64}$/.test(m.sha256)) bad("sha256");
+              if (!Number.isInteger(m.sizeBytes) || m.sizeBytes <= 0) bad("sizeBytes");
+              if (typeof m.notes === "string" && m.notes.length > 2000) bad("notes too long");
+              if (typeof m.critical !== "boolean") bad("critical");
+              console.log(f, "ok", m.version, m.sha256.slice(0, 12));
+            }
+          '
+
+      - name: Publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd assets
+          # --verify-tag: publish only a tag that exists on the remote, so a
+          # local tag pushed by mistake cannot conjure a release.
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "IBC Contracts $VERSION" \
+            --notes "${NOTES:-Maintenance update.}" \
+            --verify-tag \
+            manifest.json \
+            manifest-darwin-x64.json \
+            ibc-contracts-"$VERSION"-darwin-arm64.tar.gz \
+            ibc-contracts-"$VERSION"-darwin-x64.tar.gz
+
+      - name: Prove the client can reach the manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Publishing is a claim; fetching what she will fetch is the evidence.
+          #
+          # So this walks the SAME two hops as resolveFromGithub() in
+          # src/lib/update/manifest.ts -- releases/latest, then the manifest.json
+          # asset by its API url with Accept: application/octet-stream -- rather
+          # than the browser-facing /releases/latest/download/manifest.json it
+          # used to curl unauthenticated.
+          #
+          # That old form is a 404 on a private repository no matter what token
+          # is held, because it is not an API endpoint. This repo IS private, so
+          # the final gate of every release would have failed on a release that
+          # was in fact perfectly good -- and the one shape it was proving was
+          # the x64/manifestUrl one, not the arm64/githubRepo one her Mac uses.
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest"
+          for attempt in 1 2 3 4 5; do
+            if release=$(curl -fsSL --max-time 30 \
+                  -H "Authorization: Bearer ${GH_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" "$api"); then
+              asset=$(printf '%s' "$release" \
+                | jq -r '.assets[] | select(.name == "manifest.json") | .url')
+              if [ -n "$asset" ] && [ "$asset" != "null" ]; then
+                body=$(curl -fsSL --max-time 30 \
+                  -H "Authorization: Bearer ${GH_TOKEN}" \
+                  -H "Accept: application/octet-stream" "$asset")
+                got=$(printf '%s' "$body" | jq -r '.version')
+                if [ "$got" = "$VERSION" ]; then
+                  echo "the releases API serves manifest.json for $got"
+                  exit 0
+                fi
+                echo "the API still reports $got, waiting"
+              fi
+            fi
+            sleep 10
+          done
+          echo "::error::the published manifest is not readable through $api"
+          exit 1

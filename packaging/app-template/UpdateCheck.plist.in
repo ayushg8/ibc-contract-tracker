@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The fortnightly update check.
+
+  A separate agent from the server's, deliberately. This one is allowed to fail,
+  is allowed to be throttled, and must never be able to take the tracker down
+  with it. The server agent is Interactive because she is waiting on it; this
+  one is Background because nobody is.
+
+  WHY WEEKLY FOR A FORTNIGHTLY CHECK
+  StartCalendarInterval is a calendar matcher, not an interval: it can say
+  "every Monday" or "the 1st and the 15th", and it cannot say "every 14 days".
+  The two honest ways to build a fortnight out of it are:
+
+    (a) fire on two days of the month, but the 1st and the 15th are 13, 14, 16
+        or 17 days apart depending on the month, and February drifts;
+    (b) fire weekly and let the server refuse a check it has already done.
+
+  (b) is chosen. The floor already exists in the server: a GET of /api/update
+  runs a check behind the answer only if one is due, against
+  checkIntervalHours in the update source file. Set that to 336 for a
+  fortnight. The floor therefore lives in exactly one place, next to the
+  timestamp it is comparing against, so the schedule here can be as generous
+  as it likes without ever meaning more than one check a fortnight. That is also
+  what makes RunAtLoad safe below.
+
+  WHY RunAtLoad AS WELL
+  launchd re-fires a StartCalendarInterval it missed while the Mac was asleep,
+  soon after it wakes. It does NOT reliably do the same for a Mac that was shut
+  down at the appointed minute. RunAtLoad closes that hole: the agent is loaded
+  at every login, so a Mac that spends Mondays switched off still checks the
+  next time she uses it. With the server-side floor in place the extra fires
+  cost one loopback request that returns immediately.
+
+  WHY 12:20 ON A MONDAY
+  A laptop is awake in the middle of a working day and asleep at 03:00, and a
+  check that fires while the Mac is awake is a check that happens now instead of
+  whenever it next wakes. The odd minute keeps it off the top of the hour, where
+  everything else on the machine is scheduled.
+
+  WHAT IT DOES NOT DO
+  It never installs anything, and it cannot: the only verb it uses is GET. The
+  server looks for a new version behind that answer and records what it found;
+  the button in Settings -> Updates is the only thing that applies one. Silent
+  auto-install on a system of record means she finds out by the thing being
+  different, which is the opposite of the promise.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>@@LABEL@@</string>
+
+	<!--
+	  $0 is "sh", $1 is common.sh. The script is passed as an argument rather
+	  than built into a string, so nothing in a path needs escaping - the same
+	  rule ibc_dialog follows for the same reason.
+
+	  GET, not POST. GET is the interval-floored path: the server checks behind
+	  the answer only when one is due. A POST of {"action":"check"} would force
+	  a check on every fire, which would turn this weekly wake-up into a weekly
+	  check. It also means this job holds no verb that can change anything.
+
+	  The HTTP status is checked explicitly. curl exits 0 when it connected to
+	  something and got any answer at all, including a 404 from a foreign server
+	  squatting on the port, so its exit code is a claim and the status line is
+	  the evidence. Same lesson the launcher learned from launchctl kickstart.
+	-->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>. "$1" || exit 1
+IBC_LOG_TARGET="$IBC_LOG_DIR/update.log"
+if ! PORT=$(ibc_running_port); then
+  ibc_log "update check: no server is answering, skipped"
+  exit 0
+fi
+CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 300 "http://127.0.0.1:$PORT/api/update" 2>/dev/null)
+case "$CODE" in
+  '' | 000) CODE=000 ;;
+esac
+ibc_log "update check: GET /api/update on port $PORT answered $CODE"
+if [ "$CODE" != "200" ]; then
+  exit 1
+fi
+</string>
+		<string>sh</string>
+		<string>@@COMMON_SH@@</string>
+	</array>
+
+	<!--
+	  Weekly. The fortnight is enforced by the server, which knows when it last
+	  checked; see the note at the top of this file.
+	-->
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Weekday</key>
+		<integer>1</integer>
+		<key>Hour</key>
+		<integer>12</integer>
+		<key>Minute</key>
+		<integer>20</integer>
+	</dict>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!--
+	  No KeepAlive. A check that fails is a check that failed; relaunching it in
+	  a loop would hammer GitHub and fill the log, and the next calendar fire is
+	  a week away at most.
+	-->
+	<key>ThrottleInterval</key>
+	<integer>300</integer>
+
+	<!--
+	  Background here is correct, unlike the server agent, where it caused an
+	  18.9s boot. Nobody is waiting on this job, so the disk-I/O throttling that
+	  wrecked the server is exactly the right treatment for it.
+	-->
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+
+	<key>StandardOutPath</key>
+	<string>@@STDOUT@@</string>
+	<key>StandardErrorPath</key>
+	<string>@@STDERR@@</string>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>@@HOME@@</string>
+		<!-- launchd hands a job almost no PATH, and this one needs curl. -->
+		<key>PATH</key>
+		<string>@@PATH@@</string>
+	</dict>
+</dict>
+</plist>

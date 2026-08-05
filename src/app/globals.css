@@ -1,0 +1,595 @@
+@import 'tailwindcss';
+
+/* ══════════════════════════════════════════════════════════════════════
+   IBC Contract Tracker — design tokens
+
+   LIGHT IS THE PRIMARY THEME. Dark is a supported alternative, not the
+   default. This is a deliberate reversal: the first build was dark-first,
+   which is a developer-tool convention. The reader is a CFO, the content is
+   dense legal prose, and the records get screenshotted into email. Every
+   comparable product in legal and finance — Ironclad, DocuSign, Carta —
+   is light for the same reasons.
+
+   Theming is attribute-driven, not media-driven, because a person has to be
+   able to choose. `:root` is light. `[data-theme='dark']` is dark.
+   `[data-theme='system']` follows the OS. The attribute is written before
+   first paint by the inline script in layout.tsx, so there is no flash.
+
+   COLOR PROVENANCE: macOS 26 Tahoe. Apple revised this palette 2025-06-09;
+   pre-Tahoe values (#007AFF, #FF3B30, #FF9500) are wrong. Status colours in
+   light use Apple's ACCESSIBLE variants, which are darker than the dark-mode
+   values — #34C759 green on white is 1.6:1 and illegible as text.
+
+   TYPE: the real macOS ramp. Body is 13/16. Resist inflating it; an inflated
+   ramp is the loudest tell of a fake-Mac app.
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* ─── Surfaces ───
+     Two levels, and the distinction carries the whole layout. `canvas` is the
+     recessed plane: window background, sidebar, the area behind content.
+     `surface` is the raised plane: tables, sheets, cards. Depth comes from
+     this pair plus a hairline — never from stacking rounded boxes. */
+  --canvas: #f6f6f8;
+  --surface: #ffffff;
+  --surface-sunken: #f0f0f3; /* wells: code blocks, quote bodies, inputs */
+  --surface-hover: rgb(0 0 0 / 0.035);
+  --surface-active: rgb(0 0 0 / 0.06);
+
+  /* ─── Text ─── */
+  --label: #1d1d1f; /* Apple near-black. Never #000. */
+  --label-secondary: #6e6e73;
+  --label-tertiary: #a1a1a6;
+  --label-quaternary: #c7c7cc;
+  --text-disabled: #c7c7cc;
+  --label-onaccent: #ffffff;
+
+  /* ─── Lines ───
+     Two weights: `separator` divides rows inside a surface, `border` outlines
+     a surface against the canvas. One is nearly invisible; the other defines
+     an edge. Using one value for both is why flat UI reads as mush. */
+  --separator: rgb(0 0 0 / 0.07);
+  --border: rgb(0 0 0 / 0.11);
+  --border-strong: rgb(0 0 0 / 0.18);
+
+  /* ─── Accent ─── */
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-active: #0063c8;
+  --accent-quiet: rgb(0 113 227 / 0.1); /* selected-row wash */
+  --accent-fg: #ffffff;
+
+  /* ─── Status. Apple accessible variants — legible as TEXT on white. ─── */
+  --ok: #248a3d;
+  --ok-quiet: rgb(36 138 61 / 0.1);
+  --warn: #c93400;
+  --warn-quiet: rgb(201 52 0 / 0.1);
+  --bad: #d70015;
+  --bad-quiet: rgb(215 0 21 / 0.1);
+  --neutral: #6e6e73;
+  --neutral-quiet: rgb(110 110 115 / 0.09);
+
+  /* ─── Marks ───
+     Small filled indicators, not text. --warn (#c93400) is the accessible variant
+     chosen for TEXT contrast; at 7px it is a dark red-brown and is indistinguishable
+     from --bad (#d70015) on a dot. Hue separation is the requirement here, so the
+     mark tier is deliberately more orange than the text tier. */
+  --ok-mark: #248a3d;
+  --warn-mark: #e07b00;
+  --bad-mark: #d70015;
+
+  /* ─── Evidence ───
+     Quotes are supporting material and must never outweigh the value they
+     support. A tinted well with a quiet rule, not a filled card. */
+  --quote-bg: rgb(0 0 0 / 0.028);
+  --quote-rule: rgb(0 0 0 / 0.16);
+  --quote-text: #4b4b50;
+  --highlight: rgb(255 214 10 / 0.42); /* PDF citation wash */
+
+  /* ─── Glass. Chrome only — never the content layer (HIG prohibition). ─── */
+  --glass-blur: 24px;
+  --glass-saturate: 180%;
+  --glass-brightness: 1.02;
+  --glass-tint: rgb(246 246 248 / 0.72);
+  --glass-tint-strong: rgb(252 252 253 / 0.86);
+  --glass-rim: rgb(255 255 255 / 0.9);
+  --glass-hairline: rgb(0 0 0 / 0.09);
+
+  /* ─── Elevation. Light needs far less shadow than dark. ─── */
+  --shadow-1: 0 0 0 0.5px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-2: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 2px 6px rgb(0 0 0 / 0.05),
+    0 8px 20px rgb(0 0 0 / 0.05);
+  --shadow-3: 0 0 0 0.5px rgb(0 0 0 / 0.07), 0 4px 12px rgb(0 0 0 / 0.07),
+    0 24px 56px rgb(0 0 0 / 0.13);
+
+  /* ─── Spacing, 4px base ─── */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 20px;
+  --sp-8: 24px;
+  --sp-9: 32px;
+  --sp-10: 40px;
+  --sp-11: 56px;
+
+  /* ─── Type: the real macOS ramp. size / line-height / tracking ─── */
+  --t-hero: 32px;
+  --lh-hero: 38px;
+  --tr-hero: -0.4px;
+  --t-large-title: 26px;
+  --lh-large-title: 32px;
+  --tr-large-title: -0.3px;
+  --t-title-1: 22px;
+  --lh-title-1: 27px;
+  --tr-title-1: -0.26px;
+  --t-title-2: 17px;
+  --lh-title-2: 22px;
+  --tr-title-2: -0.43px;
+  --t-title-3: 15px;
+  --lh-title-3: 20px;
+  --tr-title-3: -0.23px;
+  --t-body: 13px;
+  --lh-body: 17px;
+  --tr-body: -0.08px;
+  --t-callout: 12px;
+  --lh-callout: 16px;
+  --tr-callout: 0px;
+  --t-subhead: 11px;
+  --lh-subhead: 14px;
+  --tr-subhead: 0.06px;
+  --t-footnote: 10px;
+  --lh-footnote: 13px;
+  --tr-footnote: 0.12px;
+  /* Section headers: small caps with real tracking, not shouty grey. */
+  --tr-eyebrow: 0.52px;
+
+  /* HIG: Regular/Medium/Semibold/Bold only. Never Light or Thin. */
+  --font-ui: -apple-system, BlinkMacSystemFont, system-ui, 'Inter', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ─── Radii, pre-multiplied 1.84x for the squircle correction:
+         r' = r * (1 - 2^-0.5) / (1 - 2^-1/n), n = 4.
+         Comment gives the round-rect equivalent a designer would spec. ─── */
+  --r-control: 11px; /* round-equiv  6px */
+  --r-row: 15px; /* round-equiv  8px */
+  --r-card: 18px; /* round-equiv 10px */
+  --r-panel: 22px; /* round-equiv 12px */
+
+  /* ─── Motion. SwiftUI springs: mass 1, stiffness (2π/0.5)² = 157.91,
+         damping 4π(1-bounce)/0.5. ─── */
+  --spring-stiffness: 157.91;
+  --damping-smooth: 25.13; /* ζ 1.00, never overshoots */
+  --damping-snappy: 21.36; /* ζ 0.85, the UI default */
+  --damping-bouncy: 17.59; /* ζ 0.70 — DO NOT SHIP on a contract record */
+
+  --dur-snappy: 700ms;
+  --ease-snappy: linear(
+    0, 0.0099, 0.0364, 0.0754, 0.1233, 0.1773, 0.235, 0.2945, 0.3543, 0.4131, 0.4702,
+    0.5247, 0.5762, 0.6244, 0.6691, 0.7102, 0.7477, 0.7818, 0.8125, 0.84, 0.8644, 0.886,
+    0.9051, 0.9217, 0.9362, 0.9486, 0.9593, 0.9684, 0.9761, 0.9826, 0.988, 0.9924,
+    0.9959, 0.9988, 1.0011, 1.0028, 1.0041, 1.005, 1.0057, 1.0061, 1.0063, 1.0063,
+    1.0062, 1.006, 1.0057, 1.0054, 1.0051, 1.0047, 1.0043, 1.0039, 1.0036, 1.0032,
+    1.0029, 1.0026, 1.0023, 1.002, 1.0017, 1.0015, 1.0013, 1.0011, 1.001
+  );
+  --dur-fast: 110ms;
+  --ease-fast: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Raw-var aliases for the same migration. Same rule: delete on last use. */
+  --bg-window: var(--canvas);
+  --bg-text: var(--surface);
+  --bg-control: var(--surface);
+  --bg-raised: var(--surface-sunken);
+  --bg-hover: var(--surface-hover);
+  --sel-content: var(--accent);
+  --sel-content-unemph: var(--neutral-quiet);
+  --sel-text-bg: var(--accent-quiet);
+  --grid: var(--separator);
+  --link: var(--accent);
+}
+
+/* ════════════════════════════════ DARK ════════════════════════════════
+   Kept as a real alternative, with a wider tonal range than the first build.
+   The old palette put canvas at #1E1E1E and cards a shade off it, which is
+   why everything read as one flat sheet. ═══════════════════════════════ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --canvas: #161618;
+  --surface: #202024;
+  --surface-sunken: #17171a;
+  --surface-hover: rgb(255 255 255 / 0.055);
+  --surface-active: rgb(255 255 255 / 0.09);
+
+  --label: #f5f5f7;
+  --label-secondary: #a1a1a6;
+  --label-tertiary: #6e6e73;
+  --label-quaternary: #48484a;
+  --text-disabled: #48484a;
+  --label-onaccent: #ffffff;
+
+  --separator: rgb(255 255 255 / 0.08);
+  --border: rgb(255 255 255 / 0.13);
+  --border-strong: rgb(255 255 255 / 0.22);
+
+  --accent: #0a84ff;
+  --accent-hover: #339dff;
+  --accent-active: #0071e3;
+  --accent-quiet: rgb(10 132 255 / 0.18);
+  --accent-fg: #ffffff;
+
+  /* Dark can use the vivid variants — they carry on a dark ground. */
+  --ok: #30d158;
+  --ok-quiet: rgb(48 209 88 / 0.16);
+  --warn: #ff9230;
+  --warn-quiet: rgb(255 146 48 / 0.16);
+  --bad: #ff4245;
+  --bad-quiet: rgb(255 66 69 / 0.16);
+  --neutral: #a1a1a6;
+  --neutral-quiet: rgb(161 161 166 / 0.14);
+
+  /* Dark already had the separation; the vivid values are the mark values. */
+  --ok-mark: #30d158;
+  --warn-mark: #ff9230;
+  --bad-mark: #ff4245;
+
+  --quote-bg: rgb(255 255 255 / 0.038);
+  --quote-rule: rgb(255 255 255 / 0.2);
+  --quote-text: #b8b8bd;
+  --highlight: rgb(255 214 10 / 0.3);
+
+  --glass-blur: 24px;
+  --glass-saturate: 170%;
+  --glass-brightness: 0.9;
+  --glass-tint: rgb(22 22 24 / 0.72);
+  --glass-tint-strong: rgb(32 32 36 / 0.88);
+  --glass-rim: rgb(255 255 255 / 0.12);
+  --glass-hairline: rgb(255 255 255 / 0.09);
+
+  --shadow-1: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4),
+    0 8px 20px rgb(0 0 0 / 0.4);
+  --shadow-3: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 4px 12px rgb(0 0 0 / 0.45),
+    0 24px 56px rgb(0 0 0 / 0.6);
+}
+
+/* `system` defers to the OS. Anything else is an explicit human choice. */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] {
+    color-scheme: dark;
+
+    --canvas: #161618;
+    --surface: #202024;
+    --surface-sunken: #17171a;
+    --surface-hover: rgb(255 255 255 / 0.055);
+    --surface-active: rgb(255 255 255 / 0.09);
+
+    --label: #f5f5f7;
+    --label-secondary: #a1a1a6;
+    --label-tertiary: #6e6e73;
+    --label-quaternary: #48484a;
+    --text-disabled: #48484a;
+
+    --separator: rgb(255 255 255 / 0.08);
+    --border: rgb(255 255 255 / 0.13);
+    --border-strong: rgb(255 255 255 / 0.22);
+
+    --accent: #0a84ff;
+    --accent-hover: #339dff;
+    --accent-active: #0071e3;
+    --accent-quiet: rgb(10 132 255 / 0.18);
+
+    --ok: #30d158;
+    --ok-quiet: rgb(48 209 88 / 0.16);
+    --warn: #ff9230;
+    --warn-quiet: rgb(255 146 48 / 0.16);
+    --bad: #ff4245;
+    --bad-quiet: rgb(255 66 69 / 0.16);
+    --neutral: #a1a1a6;
+    --neutral-quiet: rgb(161 161 166 / 0.14);
+
+    --ok-mark: #30d158;
+    --warn-mark: #ff9230;
+    --bad-mark: #ff4245;
+
+    --quote-bg: rgb(255 255 255 / 0.038);
+    --quote-rule: rgb(255 255 255 / 0.2);
+    --quote-text: #b8b8bd;
+    --highlight: rgb(255 214 10 / 0.3);
+
+    --glass-brightness: 0.9;
+    --glass-tint: rgb(22 22 24 / 0.72);
+    --glass-tint-strong: rgb(32 32 36 / 0.88);
+    --glass-rim: rgb(255 255 255 / 0.12);
+    --glass-hairline: rgb(255 255 255 / 0.09);
+
+    --shadow-1: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-2: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4),
+      0 8px 20px rgb(0 0 0 / 0.4);
+    --shadow-3: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 4px 12px rgb(0 0 0 / 0.45),
+      0 24px 56px rgb(0 0 0 / 0.6);
+  }
+}
+
+/* ═══ Increased contrast ═══ */
+@media (prefers-contrast: more) {
+  :root {
+    --separator: rgb(0 0 0 / 0.2);
+    --border: rgb(0 0 0 / 0.32);
+    --label-secondary: #48484a;
+    --label-tertiary: #6e6e73;
+    --glass-tint: rgb(246 246 248 / 0.96);
+  }
+  :root[data-theme='dark'] {
+    --separator: rgb(255 255 255 / 0.22);
+    --border: rgb(255 255 255 / 0.34);
+    --label-secondary: #d1d1d6;
+    --glass-tint: rgb(22 22 24 / 0.96);
+  }
+}
+
+/* ═══ Reduce Transparency: every glass surface goes opaque. Our whole chrome
+       is glass, so this is the one setting that can visually break the app. ═══ */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-blur: 0px;
+    --glass-saturate: 100%;
+    --glass-brightness: 1;
+    --glass-tint: #f6f6f8;
+    --glass-tint-strong: #ffffff;
+  }
+  :root[data-theme='dark'] {
+    --glass-tint: #161618;
+    --glass-tint-strong: #202024;
+  }
+}
+
+/* ═══ Reduce Motion: Apple substitutes a crossfade for movement rather than
+       removing animation. Keep opacity and colour, drop transform. ═══ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-snappy: 120ms;
+    --ease-snappy: linear;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+  }
+}
+
+/* ══════════════════════ Tailwind v4 theme bridge ══════════════════════ */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
+  --color-hover: var(--surface-hover);
+  --color-active: var(--surface-active);
+
+  --color-label: var(--label);
+  --color-label-secondary: var(--label-secondary);
+  --color-label-tertiary: var(--label-tertiary);
+  --color-label-quaternary: var(--label-quaternary);
+  --color-disabled: var(--text-disabled);
+  --color-onaccent: var(--label-onaccent);
+
+  --color-separator: var(--separator);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-accent-quiet: var(--accent-quiet);
+  --color-accent-fg: var(--accent-fg);
+
+  --color-ok: var(--ok);
+  --color-ok-quiet: var(--ok-quiet);
+  --color-warn: var(--warn);
+  --color-warn-quiet: var(--warn-quiet);
+  --color-bad: var(--bad);
+  --color-bad-quiet: var(--bad-quiet);
+  --color-neutral: var(--neutral);
+  --color-neutral-quiet: var(--neutral-quiet);
+  --color-ok-mark: var(--ok-mark);
+  --color-warn-mark: var(--warn-mark);
+  --color-bad-mark: var(--bad-mark);
+
+  --color-quote-bg: var(--quote-bg);
+  --color-quote-rule: var(--quote-rule);
+  --color-quote-text: var(--quote-text);
+  --color-highlight: var(--highlight);
+
+  --radius-control: var(--r-control);
+  --radius-row: var(--r-row);
+  --radius-card: var(--r-card);
+  --radius-panel: var(--r-panel);
+
+  --shadow-e1: var(--shadow-1);
+  --shadow-e2: var(--shadow-2);
+  --shadow-e3: var(--shadow-3);
+
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+
+  --text-hero: var(--t-hero);
+  --text-hero--line-height: var(--lh-hero);
+  --text-large-title: var(--t-large-title);
+  --text-large-title--line-height: var(--lh-large-title);
+  --text-title-1: var(--t-title-1);
+  --text-title-1--line-height: var(--lh-title-1);
+  --text-title-2: var(--t-title-2);
+  --text-title-2--line-height: var(--lh-title-2);
+  --text-title-3: var(--t-title-3);
+  --text-title-3--line-height: var(--lh-title-3);
+  --text-body: var(--t-body);
+  --text-body--line-height: var(--lh-body);
+  --text-callout: var(--t-callout);
+  --text-callout--line-height: var(--lh-callout);
+  --text-subhead: var(--t-subhead);
+  --text-subhead--line-height: var(--lh-subhead);
+  --text-footnote: var(--t-footnote);
+  --text-footnote--line-height: var(--lh-footnote);
+
+  --ease-snappy: var(--ease-snappy);
+  --ease-fast: var(--ease-fast);
+
+  /* ─── Compatibility aliases ───
+     The first build's surface names, mapped onto the new two-plane system so
+     the app keeps rendering while components are migrated. Every one of these
+     is a TODO: when no component references a name, delete the line. Nothing
+     new should be written against them. */
+  --color-window: var(--canvas);
+  --color-paper: var(--surface);
+  --color-control: var(--surface);
+  --color-raised: var(--surface-sunken);
+  --color-sel: var(--accent);
+  --color-sel-text: var(--accent-quiet);
+  --color-grid: var(--separator);
+  --color-link: var(--accent);
+}
+
+/* ═════════════════════════ Custom utilities ═══════════════════════════ */
+
+/* Apple's continuous corner. One declaration, and border, box-shadow,
+   backdrop-filter, overflow and composited children all follow the
+   superellipse. NEVER set `border-shape` on the same element — it silently
+   wins and ignores border-radius. */
+@utility sq {
+  corner-shape: squircle;
+}
+
+/* The glass material. CHROME ONLY. Apple's HIG is explicit: "Don't use
+   Liquid Glass in the content layer." brightness() is doing real work here —
+   the regular variant "blurs AND adjusts the luminosity" of the backdrop, and
+   the missing luminosity half is exactly why cheap web glass reads as cheap. */
+@utility glass {
+  background: var(--glass-tint);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+    brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+    brightness(var(--glass-brightness));
+  corner-shape: squircle;
+}
+
+/* A second glass depth WITHOUT a second blur pass: native vibrancy and
+   backdrop-filter do not stack, and nesting blurs costs a compositing pass
+   while rendering nothing. Fake the depth with tint plus a stronger rim. */
+@utility glass-over {
+  background: var(--glass-tint-strong);
+  corner-shape: squircle;
+  box-shadow:
+    inset 0 0.5px 0 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-hairline),
+    var(--shadow-3);
+}
+
+/* The raised content plane. This plus a hairline replaces nested cards. */
+@utility surface {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  corner-shape: squircle;
+  box-shadow: var(--shadow-1);
+}
+
+/* HIG scroll edge effect: "optimize for legibility when content scrolls
+   beneath controls." Same height across panes in a split view. */
+@utility scroll-edge {
+  mask-image: linear-gradient(to bottom, transparent 0, black 28px);
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section headers. Small, tracked, and in the SECONDARY tier rather than the
+   tertiary grey the first build used — a header nobody can read is not a
+   header. */
+@utility eyebrow {
+  font-size: var(--t-footnote);
+  line-height: var(--lh-footnote);
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--label-tertiary);
+}
+
+@utility hairline-b {
+  border-bottom: 0.5px solid var(--separator);
+}
+@utility hairline-t {
+  border-top: 0.5px solid var(--separator);
+}
+@utility hairline-r {
+  border-right: 0.5px solid var(--separator);
+}
+
+/* ════════════════════════════════ Base ════════════════════════════════ */
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  letter-spacing: var(--tr-body);
+  color: var(--label);
+  background: var(--canvas);
+}
+
+/* Mac apps do not use a pointer cursor on buttons. */
+button {
+  cursor: default;
+}
+
+::selection {
+  background: var(--accent-quiet);
+}
+
+/* macOS overlay scrollbars. */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 0.2);
+  border-radius: 6px;
+  border: 2.5px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 0.32);
+  background-clip: content-box;
+}
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.22);
+  background-clip: content-box;
+}
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.36);
+  background-clip: content-box;
+}
+
+/* Apple's focus ring is a 3px accent halo, not a 1px outline. */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 38%, transparent);
+}
