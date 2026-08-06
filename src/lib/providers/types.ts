@@ -1,24 +1,48 @@
 /**
  * The engine contract.
  *
- * Two implementations exist and must be behaviourally interchangeable:
- *   - cli.ts  — spawns the user's `claude` binary, uses their Claude subscription, $0 marginal
- *   - api.ts  — calls the Anthropic API with the user's key, faster and unthrottled
+ * Three implementations exist and must be behaviourally interchangeable:
+ *   - cli.ts   — spawns the user's `claude` binary, uses their Claude subscription, $0 marginal
+ *   - api.ts   — calls the Anthropic API with the user's key, faster and unthrottled
+ *   - none.ts  — reads nothing. The deterministic rules keep whatever they find and every
+ *                remaining field comes back empty for a human to type.
  *
- * Neither is ever selected implicitly. There is NO silent fallback between them: a failed
+ * None is ever selected implicitly. There is NO silent fallback between them: a failed
  * engine surfaces its EngineError and the user chooses. Silent failover would make the same
  * document produce different output on different days, which is the one thing this product
- * is not allowed to do.
+ * is not allowed to do — and that rule binds `none` hardest of all, because falling back to
+ * it would look like a successful extraction that had quietly stopped extracting.
+ *
+ * WHAT 'none' COSTS, MEASURED, so the choice is made on a number and not a feeling.
+ * Across the 13 eval fixtures there are 180 fields that should carry a value:
+ *
+ *   rules alone fill  82  (45.6%) and get 0 of them wrong
+ *   rules leave blank 98  (54.4%)
+ *
+ * plus 12 date fields computed in code, which never needed a model. Perfect precision,
+ * roughly half the recall. What rules cannot do at all is every signer (0/13), every
+ * address (0/13), the notice address (0/13) and the IBC form (0/13) — the parts of a
+ * contract that are laid out differently by every firm that drafts one. What they do
+ * perfectly is the contract name, the effective date and the governing law (13/13 each).
  */
 
 import type { DocType, FieldKey } from '../fields';
 import type { EngineError } from './errors';
 
-export type ProviderId = 'cli' | 'api';
+/**
+ * The one list. `ProviderId` is derived from it and so is the zod enum the settings
+ * route validates against, because that route's schema is a `strictObject` and a
+ * hand-written copy of this list that fell behind is exactly how choosing Dark used
+ * to answer 400. A new engine belongs here and nowhere else.
+ */
+export const PROVIDER_IDS = ['cli', 'api', 'none'] as const;
+
+export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   cli: 'Claude subscription',
   api: 'API key',
+  none: 'No AI (rules only)',
 };
 
 /* ───────────────────────────── Models ───────────────────────────── */

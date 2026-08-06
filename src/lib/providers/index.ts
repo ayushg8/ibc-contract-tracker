@@ -23,19 +23,33 @@ import {
 } from './types';
 import { ApiProvider } from './api';
 import { CliProvider } from './cli';
+import { NoneProvider } from './none';
 import { getSettings } from '../db/queries';
 import { countVerifiableQuotes, SELF_TEST_FIELDS, SELF_TEST_TEXT } from './parse';
 
 const cliProvider = new CliProvider();
 const apiProvider = new ApiProvider();
+const noneProvider = new NoneProvider();
 
-/** Direct, synchronous access when the caller already knows which engine it wants. */
+/**
+ * Direct, synchronous access when the caller already knows which engine it wants.
+ *
+ * A record rather than a chain of ternaries: `Record<ProviderId, Provider>` makes a
+ * new engine a compile error here instead of something that silently resolves to
+ * whichever branch the last `:` happened to point at.
+ */
+const PROVIDERS: Record<ProviderId, Provider> = {
+  cli: cliProvider,
+  api: apiProvider,
+  none: noneProvider,
+};
+
 export function providerFor(id: ProviderId): Provider {
-  return id === 'cli' ? cliProvider : apiProvider;
+  return PROVIDERS[id];
 }
 
 export function allProviders(): Provider[] {
-  return [cliProvider, apiProvider];
+  return [cliProvider, apiProvider, noneProvider];
 }
 
 /* ─────────────────────────── settings access ───────────────────── */
@@ -155,12 +169,14 @@ class Gate {
 const gates: Record<ProviderId, Gate> = {
   cli: new Gate(cliProvider.maxConcurrency),
   api: new Gate(apiProvider.maxConcurrency),
+  none: new Gate(noneProvider.maxConcurrency),
 };
 
 export function gateStatus(): Record<ProviderId, { inFlight: number; queued: number }> {
   return {
     cli: { inFlight: gates.cli.inFlight, queued: gates.cli.queued },
     api: { inFlight: gates.api.inFlight, queued: gates.api.queued },
+    none: { inFlight: gates.none.inFlight, queued: gates.none.queued },
   };
 }
 
@@ -196,15 +212,22 @@ export interface AllHealth {
   active: ProviderId;
   cli: ProviderHealth;
   api: ProviderHealth;
+  none: ProviderHealth;
 }
 
 /**
- * Both engines, always. Diagnostics shows the inactive one too, so switching is an
- * informed decision rather than a hope.
+ * Every engine, always. Diagnostics shows the inactive ones too, so switching is an
+ * informed decision rather than a hope -- and `none` in particular has to be visible
+ * from here, because the moment someone wants it is the moment the other two are
+ * failing and the screen they are staring at is this one.
  */
 export async function healthAll(): Promise<AllHealth> {
-  const [cli, api] = await Promise.all([cliProvider.health(), apiProvider.health()]);
-  return { active: getActiveProviderId(), cli, api };
+  const [cli, api, none] = await Promise.all([
+    cliProvider.health(),
+    apiProvider.health(),
+    noneProvider.health(),
+  ]);
+  return { active: getActiveProviderId(), cli, api, none };
 }
 
 export interface SelfTestResult {

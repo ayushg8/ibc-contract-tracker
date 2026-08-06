@@ -361,10 +361,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<Fetched<T>> {
   return { data: body as T };
 }
 
-export interface EngineHealthResponse {
+/**
+ * One entry per engine, and the screens index it by the active id rather than
+ * branching, so an engine that is added here reaches them without anyone editing
+ * a ternary whose `else` silently means "API".
+ */
+export interface EngineHealthResponse extends Record<ProviderId, ProviderHealth> {
   active: ProviderId;
-  cli: ProviderHealth;
-  api: ProviderHealth;
   cliDiagnosis: CliDiagnosis;
 }
 

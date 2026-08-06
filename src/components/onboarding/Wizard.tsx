@@ -37,13 +37,19 @@ import {
 } from '@/lib/engine-diagnosis';
 import type { ProviderId } from '@/lib/db/types';
 import type { RemedyAction, SerialisedEngineError } from '@/lib/providers/errors';
-import { MODELS, PROVIDER_LABELS } from '@/lib/providers/types';
+import { MODELS, PROVIDER_IDS, PROVIDER_LABELS } from '@/lib/providers/types';
 import type { ProviderHealth } from '@/lib/providers/types';
 
-const PROVIDER_OPTIONS: readonly SegmentedOption<ProviderId>[] = [
-  { value: 'cli', label: PROVIDER_LABELS.cli },
-  { value: 'api', label: PROVIDER_LABELS.api },
-];
+/**
+ * Derived from PROVIDER_IDS, not written out, so an engine cannot exist in the
+ * type and be missing from the only control that selects it. PROVIDER_IDS is
+ * ordered as the recommendation reads, with `none` last: it is the one you pick
+ * knowingly, and it is never picked for her -- see providers/types.ts on failover.
+ */
+const PROVIDER_OPTIONS: readonly SegmentedOption<ProviderId>[] = PROVIDER_IDS.map((id) => ({
+  value: id,
+  label: PROVIDER_LABELS[id],
+}));
 
 /** What is honestly known while the sample is in flight. Mirrors the Engine tab. */
 const STAGES = [
@@ -119,8 +125,11 @@ export function Wizard() {
   const [folderFailure, setFolderFailure] = useState<string | null>(null);
 
   const provider: ProviderId = settings?.provider ?? 'cli';
-  const active: ProviderHealth | null =
-    engine === null ? null : provider === 'cli' ? engine.cli : engine.api;
+  // Indexed, not branched. `provider === 'cli' ? engine.cli : engine.api` quietly
+  // showed the API engine's health for any engine that was not the CLI, which with
+  // a third one in the list would have meant a rules-only setup reporting "no API
+  // key" and refusing to let her past a step that has nothing to do with a key.
+  const active: ProviderHealth | null = engine === null ? null : engine[provider];
   const diagnosis = engine?.cliDiagnosis ?? null;
   const engineOk = active?.state === 'ok';
 
@@ -455,7 +464,10 @@ export function Wizard() {
       {step === STEP_ENGINE && (
         <Step
           title="Which engine should read the documents?"
-          body="Both read the same way and cite the same way. They differ in what they cost you and what they can open."
+          // "Both" was true when there were two, and the sentence after it is only
+          // true of those two: the rules-only engine does not cite, because there is
+          // nothing to cite when no model claimed anything.
+          body="The first two read the same way and cite the same way, and differ in what they cost you and what they can open. The third uses no AI at all."
         >
           <Segmented
             options={PROVIDER_OPTIONS}
@@ -477,6 +489,11 @@ export function Wizard() {
               label="API key"
               value="Roughly 1-3 cents a contract, billed to the Anthropic account. No usage cap, and it can read a scan too faint to machine-read by looking at the page itself."
               selected={provider === 'api'}
+            />
+            <Fact
+              label="No AI (rules only)"
+              value="Needs nothing and costs nothing. Fills the fields a rule can prove - on our test contracts that was about half of them, with none of them wrong - and leaves the rest blank for you to type. Signers, addresses and the IBC form are always blank."
+              selected={provider === 'none'}
             />
           </Group>
 

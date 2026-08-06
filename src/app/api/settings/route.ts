@@ -5,6 +5,7 @@ import { currentSettings } from '@/app/api/_lib/settings';
 import { updateSettings } from '@/lib/db/queries';
 import { log } from '@/lib/logger';
 import { checkFolder, checkFolderWritable, ensureDir } from '@/lib/paths';
+import { PROVIDER_IDS } from '@/lib/providers/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic';
  * schema so the next omission fails a build rather than a setting.
  */
 const Patch = z.strictObject({
-  provider: z.enum(['cli', 'api']).optional(),
+  provider: z.enum(PROVIDER_IDS).optional(),
   tier: z.enum(['fast', 'balanced', 'deep']).optional(),
   watchFolder: z.string().min(1).nullable().optional(),
   archiveFolder: z.string().min(1).optional(),

@@ -964,6 +964,22 @@ async function runPass(
     return { records, docType: null, cached: false, costUsd: null, tier, escalatedFrom };
   }
 
+  // The rules-only engine, short-circuited here rather than at the provider.
+  //
+  // NoneProvider.extract() returns an empty answer set and would be harmless to
+  // call, but calling it would still write a usage log, a raw prompt/response pair
+  // and an escalation decision for an exchange that never happened -- and the raw
+  // drawer, which exists so a human can audit what was asked, would show an empty
+  // prompt as though one had been sent. Stopping before `ctx.progress('asking')`
+  // also means the UI never says "asking Claude" when nothing is being asked.
+  //
+  // Everything downstream is unchanged: each unfilled field becomes 'missing', both
+  // dates are still computed in code from whatever the rules proved, and the
+  // document still reaches a terminal status she can review and approve.
+  if (provider.id === 'none') {
+    return { records, docType: null, cached: false, costUsd: null, tier, escalatedFrom };
+  }
+
   ctx.progress('asking');
   const input: PassInput = { ...ctx, fieldsToFill };
   let pass = await askModel(documentId, provider, tier, input);

@@ -32,12 +32,29 @@ import { api, type EngineTestResponse, type HealthResponse } from '@/lib/client/
 import { useStats } from '@/lib/client/useStats';
 import type { AppSettings, ModelTier, ProviderId } from '@/lib/db/types';
 import type { RemedyAction, SerialisedEngineError } from '@/lib/providers/errors';
-import { MODELS, PROVIDER_LABELS } from '@/lib/providers/types';
+import { MODELS, PROVIDER_IDS, PROVIDER_LABELS } from '@/lib/providers/types';
 
-const PROVIDER_OPTIONS: readonly SegmentedOption<ProviderId>[] = [
-  { value: 'cli', label: PROVIDER_LABELS.cli },
-  { value: 'api', label: PROVIDER_LABELS.api },
-];
+/**
+ * Derived from PROVIDER_IDS, not written out, so an engine cannot exist in the
+ * type and be missing from the only control that selects it. PROVIDER_IDS is
+ * ordered as the recommendation reads, with `none` last: it is the one you pick
+ * knowingly, and it is never picked for her -- see providers/types.ts on failover.
+ */
+const PROVIDER_OPTIONS: readonly SegmentedOption<ProviderId>[] = PROVIDER_IDS.map((id) => ({
+  value: id,
+  label: PROVIDER_LABELS[id],
+}));
+
+/**
+ * One line under the picker, per engine. A record rather than the `? :` that used
+ * to live here: that ternary's `else` branch described the API key, so selecting
+ * anything that was not the CLI told her it was calling Anthropic with her key.
+ */
+const PROVIDER_BLURB: Record<ProviderId, string> = {
+  cli: 'Runs through the Claude app you are already signed in to. No per-document charge.',
+  api: 'Calls Anthropic directly with your own key. Faster, and the only engine that can read scans.',
+  none: 'No engine at all. Fills only what a rule can prove and leaves the rest blank for you - about half the fields on our test contracts, and none of them wrong.',
+};
 
 const TIERS: readonly ModelTier[] = ['fast', 'balanced', 'deep'];
 
@@ -264,9 +281,7 @@ export function EngineTab({
           fullWidth
         />
         <p className="mt-[6px] px-[2px] text-footnote text-label-tertiary">
-          {settings.provider === 'cli'
-            ? 'Runs through the Claude app you are already signed in to. No per-document charge.'
-            : 'Calls Anthropic directly with your own key. Faster, and the only engine that can read scans.'}
+          {PROVIDER_BLURB[settings.provider]}
         </p>
 
         <Card padding="none" divided className="mt-[10px]">
@@ -357,6 +372,11 @@ export function EngineTab({
       </section>
 
       {/* -------------------------------- model ------------------------------ */}
+      {/* Hidden, not disabled, on the rules-only engine. A greyed-out model picker
+          invites the question "which model is it using then", and the honest answer
+          is none -- so the section that would ask it should not be on the screen.
+          The stored tier is left untouched, so switching back restores her choice. */}
+      {settings.provider !== 'none' && (
       <section>
         <SectionHeader
           title="Model"
@@ -382,6 +402,7 @@ export function EngineTab({
           ))}
         </div>
       </section>
+      )}
 
       {/* ---------------------------- test extraction ------------------------ */}
       <section>
@@ -448,7 +469,13 @@ export function EngineTab({
                   </>
                 ) : (
                   <p className="mt-[2px] text-callout text-label-secondary">
-                    The whole path works: engine, document, quotes.
+                    {/* Two sentences, because on the rules-only engine the usual
+                        one is a small lie: there is no engine and there are no
+                        quotes to check, and this panel is the place a person
+                        decides whether to believe the app. */}
+                    {settings.provider === 'none'
+                      ? 'The deterministic rules ran on a sample agreement. No engine was called.'
+                      : 'The whole path works: engine, document, quotes.'}
                   </p>
                 )}
               </div>

@@ -28,6 +28,7 @@ export async function GET(): Promise<Response> {
       active: all.active,
       cli: all.cli,
       api: all.api,
+      none: all.none,
       cliDiagnosis,
     };
   });

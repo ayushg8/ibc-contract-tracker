@@ -132,7 +132,7 @@ const METHOD_SET: Record<ExtractionMethod, true> = {
   missing: true,
 };
 
-const PROVIDER_SET: Record<ProviderId, true> = { cli: true, api: true };
+const PROVIDER_SET: Record<ProviderId, true> = { cli: true, api: true, none: true };
 const TEXT_SOURCE_SET: Record<TextSource, true> = { pdf: true, ocr: true, vision: true };
 const TIER_SET: Record<ModelTier, true> = { fast: true, balanced: true, deep: true };
 const APPEARANCE_SET: Record<AppSettings['appearance'], true> = {

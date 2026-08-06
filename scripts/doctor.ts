@@ -368,18 +368,48 @@ function apiKeyCheck(facts: EngineFacts): Check {
   };
 }
 
-function engineAvailableCheck(facts: EngineFacts): Check {
+/**
+ * The engine this installation is actually set to use, read straight out of the
+ * settings table rather than through db/queries -- doctor has to keep working on a
+ * database whose schema the app cannot open, which is exactly when it is run.
+ * Null means "could not tell", and every caller treats that as the default engine.
+ */
+async function configuredProvider(paths: Paths): Promise<string | null> {
+  if (!existsSync(paths.dbPath)) return null;
+  try {
+    const sqlite = await import('node:sqlite');
+    const db = new sqlite.DatabaseSync(paths.dbPath, { readOnly: true });
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'provider'").get();
+    db.close();
+    const value = row?.['value'];
+    return typeof value === 'string' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function engineAvailableCheck(facts: EngineFacts, provider: string | null): Check {
   return {
     id: 'engine',
     label: 'At least one engine',
     hard: true,
     async run() {
+      // Rules-only is a working configuration, not a missing engine. Reporting a
+      // HARD failure here would tell her "the app will not start" about an app that
+      // starts, reads her PDFs and fills half the record -- and the fix it printed
+      // would be a Terminal command for a problem she does not have.
+      if (provider === 'none') {
+        return {
+          state: 'pass',
+          detail: 'set to No AI (rules only) - no engine is needed, and about half the fields are filled',
+        };
+      }
       if (facts.cliAuthenticated) return { state: 'pass', detail: 'Claude subscription is signed in' };
       if (facts.keySource !== 'none') return { state: 'pass', detail: `API key from ${facts.keySource}` };
       return {
         state: 'fail',
         detail: 'no signed-in CLI and no API key',
-        fix: 'Sign in with `claude` in Terminal, or add an API key in Settings -> Engine.',
+        fix: 'Sign in with `claude` in Terminal, add an API key in Settings -> Engine, or switch to No AI (rules only) to work without one.',
       };
     },
   };
@@ -551,6 +581,7 @@ function badge(state: State): string {
 async function main(): Promise<void> {
   const paths = await resolvePaths();
   const facts = await engineFacts();
+  const provider = await configuredProvider(paths);
 
   const checks: Check[] = [
     nodeVersion(),
@@ -560,7 +591,7 @@ async function main(): Promise<void> {
     databaseCheck(paths),
     claudeCliCheck(facts),
     apiKeyCheck(facts),
-    engineAvailableCheck(facts),
+    engineAvailableCheck(facts, provider),
     portCheck(),
     diskCheck(paths),
     pdfCheck(),

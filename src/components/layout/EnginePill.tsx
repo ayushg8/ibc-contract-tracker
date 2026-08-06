@@ -6,7 +6,7 @@ import { Dot, Tooltip } from '@/components/ui';
 import { useHealth, useSettings } from '@/lib/client/useSettings';
 import type { Confidence } from '@/lib/db/types';
 import { MODELS } from '@/lib/providers/types';
-import type { HealthState } from '@/lib/providers/types';
+import type { HealthState, ProviderId } from '@/lib/providers/types';
 
 /** Written as an escape so this file stays ASCII. */
 const MIDDOT = '\u00b7';
@@ -26,7 +26,17 @@ const DOT_LABEL: Record<HealthState, string> = {
   unknown: 'Checking the engine',
 };
 
-const PROVIDER_SHORT = { cli: 'Claude', api: 'API' } as const;
+/**
+ * Typed as the full record so a new engine cannot reach this pill as `undefined`
+ * and render an empty chip. "Rules" rather than "None": the pill answers "what is
+ * reading my documents", and the honest one-word answer is what it uses, not what
+ * it lacks.
+ */
+const PROVIDER_SHORT: Record<ProviderId, string> = {
+  cli: 'Claude',
+  api: 'API',
+  none: 'Rules',
+};
 
 /**
  * The always-visible answer to "what is it using right now". Buried three clicks
@@ -45,7 +55,11 @@ export function EnginePill() {
   const state: HealthState = health.data?.engine.state ?? 'unknown';
 
   const name = provider === null ? 'Engine' : PROVIDER_SHORT[provider];
-  const model = tier === null ? null : MODELS[tier].label;
+  // No model name on the rules-only engine. The stored tier is still whatever she
+  // last chose, so this pill read "Rules - Sonnet" and named a model that was not
+  // going to be asked anything. The pill's whole job is to answer "what is reading
+  // my documents" without being opened, and half of that answer was false.
+  const model = tier === null || provider === 'none' ? null : MODELS[tier].label;
   const summary = health.data?.engine.summary ?? DOT_LABEL[state];
 
   return (
