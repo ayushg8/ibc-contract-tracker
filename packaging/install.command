@@ -38,10 +38,10 @@ MANIFEST="$PACKAGING_DIR/manifest.json"
 # is a manifest next to a payload, not a flag anyone has to remember to pass.
 if [ -f "$MANIFEST" ] && [ -d "$PACKAGING_DIR/payload" ]; then
   MODE="download"
-  TOTAL_STEPS=6
+  TOTAL_STEPS=7
 elif [ -f "$REPO_ROOT/package.json" ]; then
   MODE="source"
-  TOTAL_STEPS=8
+  TOTAL_STEPS=9
 else
   MODE="unknown"
   TOTAL_STEPS=1
@@ -673,7 +673,19 @@ else
   say "still be installed from the Updates screen inside the app."
 fi
 
-# --- 8. checkup ------------------------------------------------------------
+# --- 8. the engine ---------------------------------------------------------
+
+step "Setting up Claude"
+say "The tracker reads contracts through Claude Code. This installs it."
+say "It does not sign you in -- the tracker asks for that when it opens."
+
+# Deliberately not fatal, and deliberately not `set -e`'s business: the script
+# always exits 0 and says on screen what happened. Her Mac may have no network
+# this morning, and an installer that dies here would cost her the whole tracker
+# over something the Engine screen can retry with a button later.
+sh "$APP_PATH/Contents/Resources/bin/claude-setup.sh" || true
+
+# --- 9. checkup ------------------------------------------------------------
 
 step "Running the checkup"
 
