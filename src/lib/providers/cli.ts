@@ -369,6 +369,8 @@ export function resetCliProbes(): void {
   cachedFlags = null;
   cachedVersion = undefined;
   cachedShellLookup = undefined;
+  // Must be cleared here, or signing in would not be visible until a restart.
+  cachedAuth = undefined;
 }
 
 /* ─────────────────────────────── auth ───────────────────────────── */
@@ -1131,9 +1133,28 @@ function runClaude(req: SpawnRequest): Promise<CliRunOutcome> {
  * A binary that does not answer, times out, or prints something unrecognisable is
  * `unknown`. It is never read as signed in.
  */
+let cachedAuth: AuthStatus | undefined;
+
 async function readAuthStatus(bin: string): Promise<AuthStatus> {
+  /*
+   * Cached with the other probes, and for a sharper reason than speed.
+   *
+   * `diagnoseCli` runs on every engine health check, and this app has already been
+   * taken down once by exactly that shape: polling a health endpoint that spawns
+   * the CLI piled up fifteen concurrent `claude` processes and wedged the server,
+   * which is why the installer's liveness check is a static file. Adding an
+   * unconditional spawn to the same path would be walking back into it.
+   *
+   * It does NOT make the answer stale. `health()` calls `resetCliProbes()` at the
+   * top of every request and `diagnoseCli({fresh:true})` does the same, so the
+   * cache lives for one request: `health()` and the `diagnoseCli()` that follows it
+   * on the same endpoint share one spawn instead of making two. Signing in is
+   * visible on the very next Recheck.
+   */
+  if (cachedAuth !== undefined) return cachedAuth;
   const out = await runCapture(bin, ['auth', 'status', '--json'], 10_000);
-  return out === null ? { state: 'unknown' } : parseAuthStatus(out);
+  cachedAuth = out === null ? { state: 'unknown' } : parseAuthStatus(out);
+  return cachedAuth;
 }
 
 /**
