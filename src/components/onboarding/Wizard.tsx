@@ -402,14 +402,47 @@ export function Wizard() {
             }),
           );
         };
-      case 'install-cli':
+      // The one Terminal step she is asked to take, turned into a button.
       case 'login-cli':
+        return () => void startSignIn();
+      case 'install-cli':
       case 'update-cli':
       case 'reveal-file':
       case 'enter-manually':
       case 'none':
         // Nothing to press: the Terminal command beside it is the whole fix.
         return null;
+    }
+  }
+
+  /**
+   * Opens the login and returns at once. The browser round-trip cannot be waited
+   * on, so Recheck settles it -- and Recheck now reads `auth status` rather than
+   * spending a request.
+   */
+  async function startSignIn(): Promise<void> {
+    try {
+      const res = await fetch('/api/engine/signin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const body: unknown = await res.json();
+      const started =
+        body !== null && typeof body === 'object' && (body as { started?: unknown }).started === true;
+      toast({
+        title: started ? 'Finish signing in, then press Recheck' : 'Could not start the sign-in',
+        description: started
+          ? 'A window has opened. Complete the login in your browser and come back.'
+          : 'Send Ayush this message.',
+        tone: started ? 'ok' : 'bad',
+      });
+    } catch {
+      toast({
+        title: 'Could not start the sign-in',
+        description: 'The tracker could not open a window. Send Ayush this message.',
+        tone: 'bad',
+      });
     }
   }
 

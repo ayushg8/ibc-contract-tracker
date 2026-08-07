@@ -226,8 +226,12 @@ export function EngineTab({
         return () => onNavigate('folders');
       case 'contact-support':
         return () => onNavigate('diagnostics');
-      case 'install-cli':
+      // The one Terminal step she is asked to take, turned into a button. It is
+      // permanent rather than part of setup: tokens expire and people sign out,
+      // and the second time this happens there is no wizard to go back to.
       case 'login-cli':
+        return () => void startSignIn();
+      case 'install-cli':
       case 'update-cli':
       case 'reveal-file':
       case 'enter-manually':
@@ -237,12 +241,48 @@ export function EngineTab({
     }
   }
 
+  /**
+   * Opens the login and returns. It cannot wait for the browser round-trip, so
+   * Recheck is what confirms the result -- and Recheck now reads `auth status`
+   * rather than spending a request on a real extraction.
+   */
+  async function startSignIn(): Promise<void> {
+    try {
+      const res = await fetch('/api/engine/signin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const body: unknown = await res.json();
+      const started =
+        body !== null && typeof body === 'object' && (body as { started?: unknown }).started === true;
+      toast({
+        title: started ? 'Finish signing in, then press Recheck' : 'Could not start the sign-in',
+        description: started
+          ? 'A window has opened. Complete the login in your browser and come back.'
+          : body !== null && typeof body === 'object'
+            ? String((body as { reason?: unknown }).reason ?? '')
+            : '',
+        tone: started ? 'ok' : 'bad',
+      });
+    } catch {
+      toast({
+        title: 'Could not start the sign-in',
+        description: 'The tracker could not open a window. Send Ayush this message.',
+        tone: 'bad',
+      });
+    }
+  }
+
   function fixFor(id: string): { label: string; onClick: () => void } | undefined {
     switch (id) {
       case 'cli-found':
         return { label: 'Use an API key', onClick: () => void switchProvider('api') };
       case 'cli-auth':
-        return { label: 'Run test extraction', onClick: () => void runTest() };
+        // Sign in, not "run a test extraction". The test used to be the only way
+        // to learn whether she was signed in; `auth status` answers that for free
+        // now, so the button can be the fix rather than another diagnosis.
+        return { label: 'Sign in to Claude', onClick: () => void startSignIn() };
       case 'cli-version':
         return { label: 'Recheck', onClick: onRefresh };
       case 'api-key':
