@@ -39,9 +39,9 @@ own next action, in the wizard and in Diagnostics.
 
 | What she sees | Code | What is true | What fixes it |
 | --- | --- | --- | --- |
-| "Claude Code isn't installed on this Mac." | `CLI_NOT_FOUND` | Nothing runnable anywhere, and her login shell does not know the name either. | `npm install -g @anthropic-ai/claude-code` |
-| "Claude Code is installed, but this app cannot run it." | `CLI_NOT_FOUND` | Her shell resolves `claude`; this process cannot. **This is the one that actually happens.** | Move the install somewhere every program can see, or send you the output of `command -v claude && claude --version` |
-| "Claude Code is installed but not signed in." | `CLI_NOT_AUTHENTICATED` | Runs, but no account attached. | Run `claude` once in Terminal, finish the login, press Recheck |
+| "Claude Code isn't installed on this Mac." | `CLI_NOT_FOUND` | Nothing runnable anywhere, and her login shell does not know the name either. | The installer normally handles this. Re-run `install.command`, or `claude-setup.sh` inside the bundle |
+| "Claude Code is installed, but this app cannot run it." | `CLI_NOT_FOUND` | Her shell resolves `claude`; this process cannot. **Now rare:** the installer records the absolute path and the app reads that first. Means the recorded path went stale *and* discovery failed. | Re-run `install.command`, or send you the output of `command -v claude && claude --version` |
+| "Claude Code is installed but not signed in." | `CLI_NOT_AUTHENTICATED` | Runs, but no account attached. Detected directly now, not guessed from a credentials file. | **She presses "Sign in to Claude"** in the wizard, Settings → Engine or Diagnostics. No Terminal command to dictate |
 | "This Claude plan doesn't include what the tracker needs." | `CLI_PLAN_UNSUPPORTED` | Signed in, plan lacks the access. Waiting will not help. | Upgrade the plan, or switch to an API key |
 | "You've hit your Claude subscription limit." | `CLI_USAGE_LIMIT` | Working, currently capped. Resets on its own. | Wait, or switch to an API key. The queue resumes where it stopped |
 
@@ -54,6 +54,8 @@ about the app.
 
 `src/lib/providers/cli.ts` therefore probes, in order:
 
+0. **the path the installer wrote down**, at
+   `~/Library/Application Support/IBC Contract Tracker/runtime/claude-path`,
 1. `/usr/bin/which` against an augmented PATH,
 2. every known install location, including nvm/fnm/asdf version directories listed at
    runtime because the node version is in the path,
@@ -61,17 +63,39 @@ about the app.
 4. her actual login shell (`$SHELL -lic`), which is the only probe that sees what she
    sees.
 
+Step 0 is what makes this mostly a solved problem now. `claude-setup.sh` installs the
+CLI during the install and records the absolute path it landed on, so the app is told
+where the binary is rather than going looking. A path we were handed beats one we
+searched for. It is trusted only while it still answers `--version`; a stale one is
+discarded and the four discovery probes still run, so an install that moved degrades
+to the old behaviour rather than to a dead engine. That script also never writes a
+path for a binary that does not execute, because the app prefers it over everything
+else and a bad line there would take a working install offline.
+
 If step 4 finds the name but nothing executable, that is the "installed but unreachable"
 row above. The shell probe uses a sentinel marker (`IBC-CLAUDE-PATH:`) rather than reading
 stdout, because her dotfiles print their own banner and reading that as an answer would
 tell someone with nothing installed that it is installed. If you change this code, keep
 that test.
 
-Cases 4 and 5 cannot be detected by looking at the machine - nothing on the Mac knows
-either. They are only learned from a real extraction, so they are remembered for 30
-minutes after a failed run and replayed into Diagnostics, and cleared the moment a run
-succeeds. That is why the wizard's Test step matters: it is the only step that can find
-them.
+Case 4 **can** now be detected from the machine, and is. `claude auth status --json`
+reports `subscriptionType` without spending a request, so a plan that cannot drive
+Claude Code is caught at setup rather than by the first contract failing. The same
+call reports `loggedIn` and the account address, which is why Diagnostics can now
+name *which* account she is signed in as - signing into a personal account instead
+of the IBC one was previously invisible and produced a support call nothing on the
+screen explained.
+
+Only a plan positively recognised as lacking access is a verdict. An unfamiliar
+tier stays quiet and lets a real run decide, because the plan names are Anthropic's
+to change and telling her a working plan will never work is the expensive mistake.
+
+Case 5 still cannot be detected from the machine. Nothing on the Mac knows how much
+of a subscription window is spent, and no CLI command reports it. It is learned only
+from a run that hit the cap, so it is remembered for 30 minutes after a failed run,
+replayed into Diagnostics, and cleared the moment a run succeeds. **There is
+deliberately no remaining-quota meter anywhere in the app**: populating one would
+mean either spending requests to ask or inventing the number.
 
 ### Do not let these two collapse into each other
 

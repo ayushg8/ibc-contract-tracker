@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAuthStatus, planSupportsCli } from '@/lib/providers/cli';
+import { describeAccount, parseAuthStatus, planSupportsCli } from '@/lib/providers/cli';
+import { redact } from '@/lib/providers/errors';
 
 /*
  * `claude auth status --json` is the only cheap, authoritative answer to "is she
@@ -105,5 +106,45 @@ describe('planSupportsCli', () => {
 
   it.each([null, '', 'ultra', 'something-new'])('will not guess about %j', (plan) => {
     expect(planSupportsCli(plan)).toBe('unknown');
+  });
+});
+
+/*
+ * Naming the account is the point -- signing into a personal account rather than
+ * the IBC one is otherwise invisible, and looks to her like a broken app. But a
+ * support bundle gets forwarded, saved to a drive and pasted into threads, so the
+ * address must survive on her screen and not survive the trip.
+ *
+ * These two assertions are the boundary. If either flips, the feature has either
+ * stopped being useful or started leaking.
+ */
+describe('describeAccount', () => {
+  const signedIn = {
+    state: 'signed-in',
+    email: 'bonnie@ibcbatt.com',
+    orgName: 'IBC',
+    plan: 'pro',
+  } as const;
+
+  it('names the plan and the address for the screen she is looking at', () => {
+    expect(describeAccount(signedIn)).toBe('Claude Pro, bonnie@ibcbatt.com');
+  });
+
+  it('is masked by redact(), which is what anything forwarded goes through', () => {
+    const masked = redact(describeAccount(signedIn)) ?? '';
+    expect(masked).toContain('Claude Pro');
+    expect(masked).not.toContain('bonnie@ibcbatt.com');
+    expect(masked).toContain('***');
+  });
+
+  it('says the plan alone when no address was reported', () => {
+    expect(describeAccount({ state: 'signed-in', email: null, orgName: null, plan: 'max' })).toBe(
+      'Claude Max',
+    );
+  });
+
+  it('claims nothing when it is not signed in', () => {
+    expect(describeAccount({ state: 'signed-out' })).toBe('Not signed in.');
+    expect(describeAccount({ state: 'unknown' })).toBe('Not signed in.');
   });
 });

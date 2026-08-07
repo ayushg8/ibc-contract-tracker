@@ -123,9 +123,10 @@ It detects which of two shapes it is running in. There is no flag to remember:
 | 5 | -- | `next build` |
 | 6 | Draws the icon, writes `Info.plist`, strips quarantine, moves the bundle into `/Applications` | the same |
 | 7 | Writes and loads both LaunchAgents | the same |
-| 8 | Runs `npm run doctor` and prints the result | the same |
+| 8 | Installs Claude Code and records where it landed. Never fatal | the same |
+| 9 | Runs `npm run doctor` and prints the result | the same |
 
-So she sees `[1 of 6]`; Ayush sees `[1 of 8]`.
+So she sees `[1 of 7]`; Ayush sees `[1 of 9]`.
 
 The fingerprint is checked before a single byte is unpacked, both for the Node
 runtime and for the payload -- the same rule the updater follows. A payload

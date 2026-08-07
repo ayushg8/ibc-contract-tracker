@@ -47,9 +47,14 @@ you can paste into an email. The same checks are in the app under
 Reading a contract needs a language model. There are two ways to provide one, switchable
 in **Settings → Engine** with no restart.
 
-**Claude subscription** — shells out to the `claude` CLI you are already signed in to. No
-API key, no per-document charge. Requires Claude Code installed and logged in. Reads scans
-too: they go through local OCR first, so the model receives text either way.
+**Claude subscription** — shells out to the `claude` CLI. No API key, no per-document
+charge. **The installer installs Claude Code itself** and records where it put it, so
+the only thing left is the login, which is a button in the app rather than a Terminal
+command: the wizard, Settings → Engine and Diagnostics all offer *Sign in to Claude*
+whenever the account is missing. Needs a plan that includes Claude Code; the app reads
+the plan from `claude auth status` and says so at setup rather than at the first
+contract. Reads scans too: they go through local OCR first, so the model receives text
+either way.
 
 **API key** — calls the Anthropic API directly. Faster, no usage cap, and the JSON shape is
 guaranteed by the API rather than repaired by us. Also the fallback for a scan too poor to
