@@ -132,8 +132,30 @@ function documentCount(): number {
   return db.listDocuments({}).length;
 }
 
-function archivedNames(): string[] {
-  return readdirSync(join(dataDir, 'archive')).filter((n) => !n.startsWith('.'));
+/**
+ * Every archived PDF, by full path.
+ *
+ * Each contract now lives in a folder of its own under the archive root, so this
+ * walks rather than lists. Dot-prefixed entries stay excluded: that is what a
+ * half-written .partial looks like, and counting one as an archived document
+ * would defeat the very test this helper serves.
+ */
+function archivedPaths(): string[] {
+  const out: string[] = [];
+  const walk = (d: string): void => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.name.startsWith('.')) continue;
+      const full = join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else out.push(full);
+    }
+  };
+  try {
+    walk(join(dataDir, 'archive'));
+  } catch {
+    // Nothing archived yet.
+  }
+  return out;
 }
 
 /** Name, size and mtime of everything in her folder, for the "never touched it" test. */
@@ -190,9 +212,9 @@ describe('a file that is still being written', () => {
     expect(documentCount()).toBe(before + 1);
 
     // And what landed in the archive is the whole file, not the first chunk.
-    const archived = archivedNames().find((n) => n.endsWith('Half Synced NDA.pdf'));
+    const archived = archivedPaths().find((n) => n.endsWith('Half Synced NDA.pdf'));
     expect(archived).toBeDefined();
-    const stored = new Uint8Array(readFileSync(join(dataDir, 'archive', archived ?? '')));
+    const stored = new Uint8Array(readFileSync(archived ?? ''));
     expect(stored.byteLength).toBe(readFileSync(path).byteLength);
     expect(queue.added).toHaveLength(1);
   });
@@ -233,7 +255,7 @@ describe('a file that is still being written', () => {
     const dir = freshFolder();
     const path = join(dir, 'Signed NDA.pdf');
     const before = documentCount();
-    const archivedBefore = archivedNames().length;
+    const archivedBefore = archivedPaths().length;
 
     // The cadence that broke it: Drive appends a chunk every 4s, the watcher lists
     // the folder every 3s. Under "two observations at least 2s apart" the file was
@@ -276,11 +298,11 @@ describe('a file that is still being written', () => {
     expect(watcher.status().ingested).toBe(1);
     expect(queue.added, 'one document, read once').toHaveLength(1);
 
-    const archived = archivedNames();
+    const archived = archivedPaths();
     expect(archived.length).toBe(archivedBefore + 1);
     const name = archived.find((n) => n.endsWith('Signed NDA.pdf'));
     expect(name).toBeDefined();
-    const stored = new Uint8Array(readFileSync(join(dataDir, 'archive', name ?? '')));
+    const stored = new Uint8Array(readFileSync(name ?? ''));
     // Byte-for-byte the finished file, signature page and all -- not a prefix.
     expect(stored.byteLength).toBe(whole.byteLength);
     expect([...stored]).toEqual([...whole]);
@@ -394,7 +416,7 @@ describe('the same bytes twice', () => {
     await settle(first);
     expect(first.status().ingested).toBe(2);
     const after = documentCount();
-    const archived = archivedNames().length;
+    const archived = archivedPaths().length;
 
     // A new process: no memory of the folder at all, only the database.
     queue.added.length = 0;
@@ -404,7 +426,7 @@ describe('the same bytes twice', () => {
     expect(second.status().ingested).toBe(0);
     expect(second.status().duplicates).toBe(2);
     expect(documentCount()).toBe(after);
-    expect(archivedNames().length, 'no second archive copy').toBe(archived);
+    expect(archivedPaths().length, 'no second archive copy').toBe(archived);
     expect(queue.added, 'nothing re-queued for extraction').toEqual([]);
   });
 });

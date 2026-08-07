@@ -14,11 +14,12 @@
  * owns a copy of the rules.
  */
 
-import { rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import {
   createDocument,
+  getSettings,
   getDocument,
   getDocumentByHash,
   setDocumentFileMeta,
@@ -28,7 +29,8 @@ import type { DocumentDetail, DocumentSummary } from '@/lib/db/types';
 import { renderThumbnail, sha256 } from '@/lib/extraction/pdf';
 import { extractionQueue } from '@/lib/extraction/queue';
 import { log } from '@/lib/logger';
-import { archivedPdfPath, ensureDirs, fsError, thumbnailPath } from '@/lib/paths';
+import { contractsRoot, folderNameFor, uniqueFolder } from '@/lib/contracts-folder';
+import { archivedPdfPath, ensureDirs, fsError, safeFilename, thumbnailPath } from '@/lib/paths';
 import { EngineError } from '@/lib/providers/errors';
 
 /** The largest file either door will take. One number, two error messages. */
@@ -68,6 +70,40 @@ export async function writeAtomic(target: string, bytes: Uint8Array): Promise<vo
   } catch (e) {
     await unlink(temp).catch(() => undefined);
     throw fsError(e, target);
+  }
+}
+
+/**
+ * Put the original inside a folder of its own and return where it landed.
+ *
+ * The folder is the unit from here on: the PDF, the text the model was given, and
+ * the readable record all live in it, so that opening it in Finder answers the
+ * question without opening the app. The path is stored on the row, so a later
+ * rename costs nothing but a database write.
+ *
+ * Falls back to the old flat layout if the folder cannot be made. Losing the
+ * document because a directory could not be created would be a far worse trade
+ * than an untidy archive.
+ */
+export async function placeOriginal(
+  documentId: string,
+  filename: string,
+  bytes: Uint8Array,
+): Promise<string> {
+  const root = contractsRoot(getSettings());
+  try {
+    await mkdir(root, { recursive: true });
+    const desired = folderNameFor({ counterparty: null, effectiveDate: null, filename });
+    const folder = join(root, uniqueFolder(root, desired));
+    await mkdir(folder, { recursive: true });
+    const target = join(folder, safeFilename(filename));
+    await writeAtomic(target, bytes);
+    return target;
+  } catch (e) {
+    log.warn('archive.folder.failed', { filename, error: e });
+    const flat = archivedPdfPath(documentId, filename);
+    await writeAtomic(flat, bytes);
+    return flat;
   }
 }
 
@@ -150,8 +186,11 @@ export async function ingestPdf(input: IngestInput): Promise<IngestResult> {
     return { outcome: 'duplicate', documentId: created.id, filename, document: null };
   }
 
-  const pdfPath = archivedPdfPath(created.id, filename);
-  await writeAtomic(pdfPath, bytes);
+  // A folder of its own, named from the filename for now. It is renamed to the
+  // counterparty once the document has been read and a human has approved the
+  // record -- before that there is no counterparty to name it after, and calling
+  // it "Unknown" would be worse than calling it what she dropped in.
+  const pdfPath = await placeOriginal(created.id, filename, bytes);
 
   let thumbnail: string | null = null;
   try {
