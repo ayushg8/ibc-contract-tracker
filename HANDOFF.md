@@ -125,11 +125,45 @@ Everything is under one folder:
 ```
 ~/Library/Application Support/IBC Contract Tracker/
 ├── tracker.db        SQLite. Contracts, documents, fields, audit, settings
-├── archive/          The tracker's own copy of every PDF
+├── archive/          Default home for the contract folders. Movable - see below
 ├── thumbnails/       First-page renders
 ├── exports/          Generated workbooks
+├── runtime/          port, claude-path
 └── logs/             Rolling log, redacted
 ```
+
+**The contracts themselves are folders, and the folder is the unit.** Each document
+gets one:
+
+```
+<contracts folder>/
+└── Helios Anode Systems, Inc./
+    ├── Helios Anode NDA.pdf        the original, byte for byte
+    └── What the reader saw.txt     the text the model was actually given
+```
+
+The `.txt` exists for a reason that is not convenience. On the OCR path a character
+the scanner got wrong appears identically in the quote and in the text that quote
+is checked against, so it verifies -- the guard cannot catch that, and disclosure is
+the only honest answer. Its header names the path taken, the OCR confidence, and
+which pages were read.
+
+**Where that folder lives is hers to choose**, in the wizard and in
+Settings -> Folders, and both screens have an Open button that shows it in Finder.
+The review screen has the same button for one contract. `archiveFolder` is the
+setting; until 1.2.0 it was offered, validated, health-checked and reported in the
+support bundle while ingest ignored it entirely, so moving it did nothing.
+
+Two things to know before touching this:
+
+- **Creating the folder is allowed to fail.** A full disk, a permission she does not
+  have, an unplugged drive: the document falls back to the old flat
+  `archive/<uuid>-<name>.pdf` and the ingest still succeeds. An untidy archive beats
+  a signed contract that did not get saved.
+- **Documents archived before 1.2.0 are still flat, and are left that way.** Nothing
+  migrates them. They open correctly -- the path is on the row, and the reveal route
+  accepts the old archive as well as the new root -- but that folder is a mix of
+  layouts until someone writes the migration.
 
 Overridable with `IBC_DATA_DIR` for a test profile or a second machine.
 

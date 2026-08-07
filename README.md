@@ -142,8 +142,14 @@ src/components/ui/             the design-system primitives
 evals/                         fixtures and cases
 ```
 
-Data lives in `~/Library/Application Support/IBC Contract Tracker/` — database, PDF
-archive, thumbnails, logs, exports. Override with `IBC_DATA_DIR`.
+Data lives in `~/Library/Application Support/IBC Contract Tracker/` — database,
+thumbnails, logs, exports. Override with `IBC_DATA_DIR`.
+
+**Contracts are kept as folders, wherever you point them.** Each document gets one,
+holding the original PDF and `What the reader saw.txt` — the text the model was
+actually given, with a header saying whether it came from the PDF's text layer or
+from OCR, and which pages. The location is chosen in setup and changeable in
+Settings → Folders, and Open buttons there and on each record show it in Finder.
 
 ---
 
