@@ -361,6 +361,101 @@ export function resetCliProbes(): void {
   cachedShellLookup = undefined;
 }
 
+/* ─────────────────────────────── auth ───────────────────────────── */
+
+/**
+ * What `claude auth status --json` said, or `unknown`.
+ *
+ * `unknown` is a refusal, not a default. Anything this cannot positively account
+ * for must never come back as signed in: claiming an account exists when it does
+ * not sends her to an engine that fails on the first real contract, with every
+ * setup screen having told her it was fine.
+ */
+export type AuthStatus =
+  | { state: 'signed-in'; email: string | null; orgName: string | null; plan: string | null }
+  | { state: 'signed-out' }
+  | { state: 'unknown' };
+
+/**
+ * The first balanced JSON object in the text, or null.
+ *
+ * Not `JSON.parse(stdout)`: her dotfiles print their own banner, and reading that
+ * as the answer is the same mistake `parseShellLookup` exists to avoid. String
+ * contents are skipped so a brace inside an org name cannot end the scan early.
+ */
+function firstJsonObject(text: string): unknown {
+  const start = text.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function stringOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+export function parseAuthStatus(stdout: string): AuthStatus {
+  const parsed = firstJsonObject(stdout);
+  if (!isRecord(parsed)) return { state: 'unknown' };
+  const loggedIn = parsed['loggedIn'];
+  if (loggedIn === false) return { state: 'signed-out' };
+  // Strictly `true`. A truthy 1 or "yes" is output this does not understand.
+  if (loggedIn !== true) return { state: 'unknown' };
+  return {
+    state: 'signed-in',
+    email: stringOrNull(parsed['email']),
+    orgName: stringOrNull(parsed['orgName']),
+    plan: stringOrNull(parsed['subscriptionType']),
+  };
+}
+
+const PLANS_WITH_CLI = new Set(['pro', 'max', 'team', 'enterprise']);
+const PLANS_WITHOUT_CLI = new Set(['free']);
+
+/**
+ * Closed on both sides, and asymmetric on purpose.
+ *
+ * A tier nobody here has heard of is `unknown`, so the verdict falls through to
+ * what a real run says. Telling someone whose plan works that it never will is the
+ * worse of the two mistakes, and the set of plan names is Anthropic's to change.
+ */
+export function planSupportsCli(plan: string | null): 'yes' | 'no' | 'unknown' {
+  if (plan === null) return 'unknown';
+  const key = plan.trim().toLowerCase();
+  if (PLANS_WITH_CLI.has(key)) return 'yes';
+  if (PLANS_WITHOUT_CLI.has(key)) return 'no';
+  return 'unknown';
+}
+
 /* ───────────────────────────── version ──────────────────────────── */
 
 export function parseCliVersion(output: string): string | null {
