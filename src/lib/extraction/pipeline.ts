@@ -17,8 +17,16 @@
  *     already approved.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
+import {
+  contractsRoot,
+  isInside,
+  TEXT_FILENAME,
+  textFileHeader,
+} from '@/lib/contracts-folder';
+import { archiveDir } from '@/lib/paths';
 import {
   FIELDS,
   FIELD_KEYS,
@@ -42,6 +50,7 @@ import {
 import { getActiveProvider, getActiveTier } from '@/lib/providers';
 import {
   getDocument,
+  getSettings,
   getDocumentFields,
   getSetting,
   insertAudit,
@@ -548,6 +557,45 @@ function recordHowItWasRead(documentId: string, read: DocumentText, pageCount: n
   });
 }
 
+/**
+ * Put the text the model was given next to the original, as a plain .txt.
+ *
+ * The point is not convenience. On the OCR path a character the scanner got wrong
+ * appears identically in the quote and in the text the quote is checked against,
+ * so it verifies -- the citation guard cannot catch that, and disclosure is the
+ * only honest answer. Writing the machine read where a person can open it is that
+ * disclosure made concrete: anyone doubting a value can read what was actually
+ * read, beside the page it came from.
+ *
+ * There is nothing to write on the vision path, where no text ever existed. Every
+ * failure here is swallowed: the extraction is already saved, and losing a record
+ * over a file that exists for reassurance would invert the priorities entirely.
+ */
+async function writeTextSidecar(documentId: string, read: DocumentText): Promise<void> {
+  try {
+    if (read.text === null || read.text.trim() === '') return;
+    const doc = getDocument(documentId);
+    const archived = doc?.archivePath;
+    if (typeof archived !== 'string' || archived === '') return;
+
+    const folder = dirname(archived);
+    const root = contractsRoot(getSettings());
+    // Same rule the reveal route follows: only ever write inside our own tree.
+    if (!isInside(root, folder) && !isInside(archiveDir(), folder)) return;
+
+    const header = textFileHeader({
+      filename: doc?.filename ?? 'the document',
+      textSource: read.source,
+      ocrConfidence:
+        read.source === 'ocr' && read.ocrConfidence !== null ? read.ocrConfidence / 100 : null,
+      pagesReadRanges: formatPageRanges(read.ranges) || null,
+    });
+    await writeFile(join(folder, TEXT_FILENAME), header + read.text, 'utf8');
+  } catch (e) {
+    log.warn('archive.text.failed', { documentId, error: e });
+  }
+}
+
 function writeHowItWasRead(documentId: string, read: DocumentText, pageCount: number): void {
   // Written for every path, including a clean digital PDF: a reader has to be able to
   // tell "verified against the page" from "verified against our scan of the page",
@@ -583,6 +631,11 @@ function writeHowItWasRead(documentId: string, read: DocumentText, pageCount: nu
     pagesReadRanges: formatPageRanges(read.ranges) || null,
     updatedAt: nowIso(),
   });
+
+  // The text the model was actually given, written beside the original so the
+  // folder answers "what did it read" without the app being open. Never fatal:
+  // this is a convenience, and the record it describes is already in the database.
+  void writeTextSidecar(documentId, read);
 
   if (read.source === 'pdf') return;
 

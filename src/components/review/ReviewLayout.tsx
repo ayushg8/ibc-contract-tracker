@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwise, ArrowLeft, Code } from '@phosphor-icons/react';
+import { ArrowClockwise, ArrowLeft, Code, FolderOpen } from '@phosphor-icons/react';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
 import {
   Button,
@@ -210,6 +210,27 @@ export function ReviewLayout({
             </IconButton>
           </Tooltip>
         )}
+
+        {/*
+          Where this contract lives, one click away. The folder holds the original
+          PDF, the text the model was actually given, and the readable record, so
+          opening it answers most of what someone would otherwise ask the app for.
+        */}
+        <Tooltip content="Show this contract's folder in Finder">
+          <IconButton
+            label="Show in Finder"
+            size="sm"
+            onClick={() => {
+              void fetch('/api/reveal', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ documentId: document.id }),
+              }).catch(() => undefined);
+            }}
+          >
+            <FolderOpen size={13} />
+          </IconButton>
+        </Tooltip>
 
         <Button
           size="sm"

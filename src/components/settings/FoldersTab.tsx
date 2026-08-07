@@ -243,6 +243,37 @@ function FolderRow({
     if (ok) setEditing(false);
   }
 
+  /**
+   * Ask the server to show the folder in Finder.
+   *
+   * With no document id, /api/reveal opens the contracts root. It never accepts a
+   * path from here: this screen knows one, but a route that opens whatever it is
+   * given opens anything on the disk, and the server has no authentication.
+   */
+  function openFolder() {
+    if (path === null) return;
+    void fetch('/api/reveal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then(async (r) => {
+        const body: unknown = await r.json();
+        const ok = body !== null && typeof body === 'object' && (body as { ok?: unknown }).ok === true;
+        if (!ok) {
+          toast({
+            title: 'Could not open that folder',
+            description:
+              body !== null && typeof body === 'object'
+                ? String((body as { reason?: unknown }).reason ?? '')
+                : '',
+            tone: 'warn',
+          });
+        }
+      })
+      .catch(() => toast({ title: 'Could not open that folder', tone: 'warn' }));
+  }
+
   function copyPath() {
     if (path === null) return;
     void navigator.clipboard
@@ -310,6 +341,14 @@ function FolderRow({
           <>
             <Button size="sm" onClick={beginEdit}>
               Change
+            </Button>
+            {/*
+              Opening the folder is the thing she actually wants from this screen.
+              A path she can only copy is a path she has to paste into a Go To
+              Folder box, which is one more thing to be told how to do.
+            */}
+            <Button size="sm" variant="ghost" disabled={path === null} onClick={openFolder}>
+              Open
             </Button>
             <Button size="sm" variant="ghost" disabled={path === null} onClick={copyPath}>
               Copy path

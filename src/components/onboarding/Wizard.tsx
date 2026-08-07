@@ -58,11 +58,12 @@ const STAGES = [
   'Checking the quotes against the text',
 ] as const;
 
-const STEPS = ['Welcome', 'Engine', 'Test', 'Watch folder', 'Done'] as const;
+const STEPS = ['Welcome', 'Engine', 'Test', 'Watch folder', 'Contracts', 'Done'] as const;
 
 const STEP_ENGINE = 1;
 const STEP_TEST = 2;
 const STEP_FOLDER = 3;
+const STEP_ARCHIVE = 4;
 const LAST = STEPS.length - 1;
 
 /**
@@ -124,6 +125,10 @@ export function Wizard() {
   const [folderSaving, setFolderSaving] = useState(false);
   const [folderFailure, setFolderFailure] = useState<string | null>(null);
 
+  const [archiveDraft, setArchiveDraft] = useState('');
+  const [archiveSaving, setArchiveSaving] = useState(false);
+  const [archiveFailure, setArchiveFailure] = useState<string | null>(null);
+
   const provider: ProviderId = settings?.provider ?? 'cli';
   // Indexed, not branched. `provider === 'cli' ? engine.cli : engine.api` quietly
   // showed the API engine's health for any engine that was not the CLI, which with
@@ -158,6 +163,10 @@ export function Wizard() {
   useEffect(() => {
     setFolderDraft(settings?.watchFolder ?? '');
   }, [settings?.watchFolder]);
+
+  useEffect(() => {
+    setArchiveDraft(settings?.archiveFolder ?? '');
+  }, [settings?.archiveFolder]);
 
   /* ------------------------------- engine -------------------------------- */
 
@@ -314,7 +323,7 @@ export function Wizard() {
     const next = normalizeFolderPath(folderDraft);
     if (next.length === 0) {
       setFolderFailure(null);
-      setStep(LAST);
+      setStep(STEP_ARCHIVE);
       return;
     }
     setFolderSaving(true);
@@ -325,6 +334,32 @@ export function Wizard() {
       return;
     }
     setFolderFailure(null);
+    setStep(STEP_ARCHIVE);
+  }
+
+  /**
+   * Where every contract folder is kept.
+   *
+   * Unlike the watch folder this one always has a value, because the tracker has
+   * to put the PDF somewhere. Leaving it blank keeps whatever is already set
+   * rather than clearing it -- an empty archive path is not a preference anyone
+   * can hold.
+   */
+  async function saveArchive() {
+    const next = normalizeFolderPath(archiveDraft);
+    if (next.length === 0) {
+      setArchiveFailure(null);
+      setStep(LAST);
+      return;
+    }
+    setArchiveSaving(true);
+    const failure = await save({ archiveFolder: next });
+    setArchiveSaving(false);
+    if (failure !== null) {
+      setArchiveFailure(failure.message);
+      return;
+    }
+    setArchiveFailure(null);
     setStep(LAST);
   }
 
@@ -763,6 +798,47 @@ export function Wizard() {
         </Step>
       )}
 
+      {step === STEP_ARCHIVE && (
+        <Step
+          title="Where should the contracts be kept?"
+          body="Every contract gets a folder of its own here, holding the original PDF and the text the tracker read. Put it somewhere you would look for it -- Documents is a good answer, iCloud Drive or a synced folder is not."
+        >
+          <Input
+            mono
+            value={archiveDraft}
+            placeholder="/Users/you/Documents/IBC Contracts"
+            aria-label="Contracts folder"
+            disabled={archiveSaving}
+            icon={<FolderOpen size={13} />}
+            onChange={(event) => setArchiveDraft(event.target.value)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              const dropped = folderPathFromDrop(event.dataTransfer);
+              if (dropped === null) {
+                toast({
+                  title: 'That drop did not carry a folder location',
+                  description: FOLDER_PATH_HINT,
+                  tone: 'warn',
+                });
+                return;
+              }
+              setArchiveDraft(dropped);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              void saveArchive();
+            }}
+          />
+          {archiveFailure !== null && <p className="text-callout text-bad">{archiveFailure}</p>}
+          <p className="text-footnote text-label-tertiary">
+            You can move it later in Settings, and the tracker will bring the
+            contracts with it.
+          </p>
+        </Step>
+      )}
+
       {step === STEP_FOLDER && (
         <Step
           title="Where do the PDFs live?"
@@ -866,6 +942,10 @@ export function Wizard() {
         {step === STEP_FOLDER ? (
           <Button variant="primary" loading={folderSaving} onClick={() => void saveFolder()}>
             {folderDraft.trim().length > 0 ? 'Use this folder' : 'Continue'}
+          </Button>
+        ) : step === STEP_ARCHIVE ? (
+          <Button variant="primary" loading={archiveSaving} onClick={() => void saveArchive()}>
+            {archiveDraft.trim().length > 0 ? 'Keep them here' : 'Continue'}
           </Button>
         ) : step === LAST ? (
           <Button variant="primary" loading={finishing} onClick={() => void finish()}>
