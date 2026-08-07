@@ -58,6 +58,36 @@ export function exportDir(): string {
   return path.join(dataDir(), 'exports');
 }
 
+/** Small files the running system writes about itself: the port, the CLI path. */
+export function runtimeDir(): string {
+  return path.join(dataDir(), 'runtime');
+}
+
+/**
+ * The absolute path the installer put Claude Code at, when it still runs.
+ *
+ * An app opened from the Dock or started by a LaunchAgent does not inherit her
+ * shell's PATH, so `~/.local/bin`, Homebrew and every version manager are invisible
+ * to it. That is why "installed, but this app cannot run it" is the case that
+ * actually happens. The installer knows exactly where it wrote the binary, so it
+ * writes the path down here and the probe reads it instead of searching.
+ *
+ * Trusted only while it still runs. A path that has moved or been removed is
+ * discarded rather than returned, and `resolveClaudeBinary` falls through to the
+ * four discovery probes -- so a moved install degrades to the old behaviour instead
+ * of to an engine that cannot start.
+ */
+export function recordedClaudePath(): string | null {
+  try {
+    const raw = fs.readFileSync(path.join(runtimeDir(), 'claude-path'), 'utf8').trim();
+    if (raw.length === 0) return null;
+    fs.accessSync(raw, fs.constants.X_OK);
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 /** Default watch folder suggestion for the first-run wizard. Not created. */
 export function suggestedWatchDir(): string {
   return path.join(os.homedir(), 'IBC', 'NDAs');

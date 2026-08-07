@@ -46,6 +46,7 @@ export type CliCase =
 
 /** How the binary was found. Which one it was is itself diagnostic. */
 export type CliFoundVia =
+  | 'recorded'
   | 'which'
   | 'known-location'
   | 'npm-prefix'
@@ -239,6 +240,8 @@ export interface CliDiagnosis {
   version: string | null;
   /** ISO time the subscription limit is expected to reset, when we could read one. */
   limitResetsAt: string | null;
+  /** Who it is signed in as, when `claude auth status` answered. */
+  account: CliAccount | null;
   /**
    * True when the binary was found somewhere `which` alone would have missed --
    * the GUI-launch case, which is the one that will actually happen.
@@ -246,11 +249,25 @@ export interface CliDiagnosis {
   neededDeepProbe: boolean;
 }
 
+/**
+ * Who Claude Code is signed in as, when it told us.
+ *
+ * Shown on screen deliberately. Signing into a personal account rather than the
+ * work one is otherwise completely invisible, and produces a support call that
+ * nothing on the engine screen explains.
+ */
+export interface CliAccount {
+  email: string | null;
+  orgName: string | null;
+  plan: string | null;
+}
+
 export interface DiagnosisFacts {
   binPath?: string | null;
   foundVia?: CliFoundVia;
   version?: string | null;
   limitResetsAt?: string | null;
+  account?: CliAccount | null;
 }
 
 /** Build the renderable verdict for a case. Pure; the server and the tests share it. */
@@ -275,11 +292,13 @@ export function describeCli(kind: CliCase, facts: DiagnosisFacts = {}): CliDiagn
     foundVia,
     version: facts.version ?? null,
     limitResetsAt: facts.limitResetsAt ?? null,
+    account: facts.account ?? null,
     neededDeepProbe: foundVia === 'npm-prefix' || foundVia === 'login-shell',
   };
 }
 
 const VIA_LABEL: Record<CliFoundVia, string> = {
+  recorded: 'where the installer put it',
   which: 'on the PATH this app inherited',
   'known-location': 'in a known install location',
   'npm-prefix': "in npm's global folder, which this app is not given",

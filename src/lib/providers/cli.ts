@@ -12,7 +12,7 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { accessSync, constants, existsSync, readdirSync } from 'node:fs';
+import { accessSync, constants, readdirSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { delimiter, join } from 'node:path';
 import {
@@ -22,6 +22,7 @@ import {
   type CliFoundVia,
 } from '../engine-diagnosis';
 import type { DocType, FieldKey } from '../fields';
+import { recordedClaudePath } from '../paths';
 import { EngineError, redact, toEngineError, type EngineErrorCode } from './errors';
 import {
   LIMITS,
@@ -314,6 +315,15 @@ export async function resolveClaudeBinary(): Promise<string | null> {
   cachedBin = null;
   cachedFoundVia = 'none';
 
+  // Ahead of every discovery probe: the installer wrote down where it put the
+  // binary, and a path we were told beats a path we went looking for. This is what
+  // removes the not-on-path case, which is the one that actually happens.
+  const recorded = recordedClaudePath();
+  if (recorded !== null) {
+    cachedBin = recorded;
+    cachedFoundVia = 'recorded';
+    return cachedBin;
+  }
   const viaWhich = await whichClaude();
   if (viaWhich) {
     cachedBin = viaWhich;
@@ -1111,26 +1121,34 @@ function runClaude(req: SpawnRequest): Promise<CliRunOutcome> {
  * guess — `--version` works fine when logged out — so health() reports `unknown`
  * rather than claiming a green tick it cannot back up. selfTest() is the real proof.
  */
-async function probeCliCredentials(): Promise<'present' | 'absent' | 'unknown'> {
-  const files = [
-    join(homedir(), '.claude', '.credentials.json'),
-    join(homedir(), '.config', 'claude', '.credentials.json'),
-  ];
-  for (const file of files) {
-    if (existsSync(file)) return 'present';
-  }
-  if (platform() !== 'darwin') return 'unknown';
-  try {
-    // No `-w`: we check for the item's existence and never ask for the secret.
-    await execFileAsync(
-      '/usr/bin/security',
-      ['find-generic-password', '-s', 'Claude Code-credentials'],
-      { timeout: 8_000 },
-    );
-    return 'present';
-  } catch {
-    return 'unknown';
-  }
+/**
+ * The authoritative answer to "is it signed in, and to what", and it spends nothing.
+ *
+ * This replaced a probe that looked for a credentials file and inferred a login
+ * from its existence. That could not tell a stale file from a live session, knew
+ * nothing about the plan, and produced `unverified` on a perfectly working install.
+ *
+ * A binary that does not answer, times out, or prints something unrecognisable is
+ * `unknown`. It is never read as signed in.
+ */
+async function readAuthStatus(bin: string): Promise<AuthStatus> {
+  const out = await runCapture(bin, ['auth', 'status', '--json'], 10_000);
+  return out === null ? { state: 'unknown' } : parseAuthStatus(out);
+}
+
+/**
+ * "Claude Pro, bonnie@ibcbatt.com". Safe to show and safe to put in a support
+ * bundle: an account name and a plan tier, never a token.
+ */
+export function describeAccount(auth: AuthStatus): string {
+  if (auth.state !== 'signed-in') return 'Not signed in.';
+  const plan = auth.plan === null ? 'Claude' : `Claude ${titleCase(auth.plan)}`;
+  return auth.email === null ? plan : `${plan}, ${auth.email}`;
+}
+
+function titleCase(s: string): string {
+  const t = s.trim();
+  return t.length === 0 ? t : t[0]!.toUpperCase() + t.slice(1).toLowerCase();
 }
 
 /* ───────────────────────────── diagnosis ───────────────────────── */
@@ -1146,7 +1164,7 @@ async function probeCliCredentials(): Promise<'present' | 'absent' | 'unknown'> 
  *   3. Runs, but too old to accept our flags -> too-old
  *   4. A real run said plan / limit / login  -> that verdict, replayed
  *   5. No way to switch its tools off        -> blocked
- *   6. Credentials on disk                   -> working, else unverified
+ *   6. `claude auth status` answered      -> working / not-signed-in / plan
  *
  * Steps 1-3, 5 and 6 look at the machine. Step 4 is the only one that needs a real
  * extraction to have happened, which is exactly why the Test step exists.
@@ -1193,8 +1211,20 @@ export async function diagnoseCli(opts: { fresh?: boolean } = {}): Promise<CliDi
   const flags = await probeFlags(bin);
   if (!flags.canDisableTools) return describeCli('blocked', facts);
 
-  const creds = await probeCliCredentials();
-  return describeCli(creds === 'present' ? 'working' : 'unverified', facts);
+  // Ask it, rather than inferring a login from a file on disk. This costs nothing
+  // and answers two questions the filesystem never could: whether the session is
+  // live, and which account and plan it belongs to.
+  const auth = await readAuthStatus(bin);
+  if (auth.state === 'signed-out') return describeCli('not-signed-in', facts);
+  if (auth.state === 'unknown') return describeCli('unverified', facts);
+
+  const account = { email: auth.email, orgName: auth.orgName, plan: auth.plan };
+  // Only a plan we positively recognise as lacking CLI access is a verdict here.
+  // An unfamiliar tier stays `working` and lets a real run have the final word.
+  if (planSupportsCli(auth.plan) === 'no') {
+    return describeCli('plan-unsupported', { ...facts, account });
+  }
+  return describeCli('working', { ...facts, account });
 }
 
 /* ───────────────────────────── the engine ──────────────────────── */
@@ -1509,21 +1539,34 @@ export class CliProvider implements Provider {
       ...(flags.canDisableTools ? {} : { errorCode: 'CLI_PERMISSION_PROMPT' }),
     });
 
-    const creds = await probeCliCredentials();
+    const auth = await readAuthStatus(bin);
     const remembered = recentFailure();
+    const signedOut = remembered === 'CLI_NOT_AUTHENTICATED' || auth.state === 'signed-out';
     checks.push({
       id: 'cli-auth',
       label: 'Signed in',
-      state:
-        remembered === 'CLI_NOT_AUTHENTICATED' ? 'fail' : creds === 'present' ? 'ok' : 'unknown',
-      detail:
-        remembered === 'CLI_NOT_AUTHENTICATED'
+      state: signedOut ? 'fail' : auth.state === 'signed-in' ? 'ok' : 'unknown',
+      detail: signedOut
+        ? remembered === 'CLI_NOT_AUTHENTICATED'
           ? 'The last run was refused for want of a login.'
-          : creds === 'present'
-            ? 'Credentials found. Run a test extraction to confirm.'
-            : 'Cannot verify without spending a request. Run a test extraction.',
-      ...(remembered === 'CLI_NOT_AUTHENTICATED' ? { errorCode: 'CLI_NOT_AUTHENTICATED' } : {}),
+          : 'Claude Code has no account attached.'
+        : auth.state === 'signed-in'
+          ? describeAccount(auth)
+          : 'Claude Code did not report its sign-in state.',
+      ...(signedOut ? { errorCode: 'CLI_NOT_AUTHENTICATED' } : {}),
     });
+
+    // Which account, in the row she reads, because signing into a personal account
+    // instead of the work one is otherwise invisible and looks like a broken app.
+    if (auth.state === 'signed-in' && planSupportsCli(auth.plan) === 'no') {
+      checks.push({
+        id: 'cli-plan',
+        label: 'Plan',
+        state: 'fail',
+        detail: `${describeAccount(auth)} does not include reading documents through Claude Code.`,
+        errorCode: 'CLI_PLAN_UNSUPPORTED',
+      });
+    }
 
     // A plan without the access we need, and a usage cap, are invisible to every
     // probe above: nothing on this Mac knows either. They are only ever learned
@@ -1558,7 +1601,11 @@ export class CliProvider implements Provider {
       provider: 'cli',
       state,
       summary: `Claude Code${version === null ? '' : ` v${version}`}${
-        creds === 'present' ? ' - signed in' : ' - sign-in unverified'
+        auth.state === 'signed-in'
+          ? ` - ${describeAccount(auth)}`
+          : auth.state === 'signed-out'
+            ? ' - not signed in'
+            : ' - sign-in unverified'
       }`,
       checks,
       ...(version === null ? {} : { version }),
