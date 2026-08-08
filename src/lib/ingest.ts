@@ -186,10 +186,10 @@ export async function ingestPdf(input: IngestInput): Promise<IngestResult> {
     return { outcome: 'duplicate', documentId: created.id, filename, document: null };
   }
 
-  // A folder of its own, named from the filename for now. It is renamed to the
-  // counterparty once the document has been read and a human has approved the
-  // record -- before that there is no counterparty to name it after, and calling
-  // it "Unknown" would be worse than calling it what she dropped in.
+  // A folder of its own, named from the filename for now. The approve route
+  // renames it to the counterparty once a human has settled the record; before
+  // that there is no counterparty to name it after, and calling it "Unknown"
+  // would be worse than calling it what she dropped in.
   const pdfPath = await placeOriginal(created.id, filename, bytes);
 
   let thumbnail: string | null = null;

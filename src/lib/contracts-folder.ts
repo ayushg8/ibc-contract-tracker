@@ -135,6 +135,51 @@ export function isInside(root: string, child: string): boolean {
   return c.startsWith(r.endsWith(path.sep) ? r : r + path.sep);
 }
 
+/**
+ * Rename a document's folder to the counterparty, once one is known.
+ *
+ * Called at approval, which is the first moment the name is both known and
+ * settled: before a human has approved it, the counterparty is a machine's guess
+ * and renaming on every re-read would shuffle her folders under her.
+ *
+ * Returns the new path of the archived file, or null when nothing was done.
+ * Every failure returns null rather than throwing: this runs inside approval, and
+ * an approval that fails because a directory could not be renamed would be a far
+ * worse outcome than a folder that keeps the name of the file she dropped in.
+ */
+export function renameContractFolder(input: {
+  archivePath: string;
+  counterparty: string | null;
+  effectiveDate: string | null;
+  filename: string;
+  root: string;
+}): string | null {
+  try {
+    const { archivePath, root } = input;
+    if (archivePath === '') return null;
+
+    const folder = path.dirname(archivePath);
+    // Only ever inside our own tree, and never the root itself -- a document
+    // written to the old flat layout lives directly in the root, and renaming
+    // that would move every other contract with it.
+    if (!isInside(root, folder) || path.resolve(folder) === path.resolve(root)) return null;
+    if (!fs.existsSync(folder)) return null;
+
+    const desired = folderNameFor({
+      counterparty: input.counterparty,
+      effectiveDate: input.effectiveDate,
+      filename: input.filename,
+    });
+    if (path.basename(folder) === desired) return null; // already right
+
+    const target = path.join(root, uniqueFolder(root, desired));
+    fs.renameSync(folder, target);
+    return path.join(target, path.basename(archivePath));
+  } catch {
+    return null;
+  }
+}
+
 /** Human-readable name of the text file kept beside the original. */
 export const TEXT_FILENAME = 'What the reader saw.txt';
 /** Human-readable name of the record summary kept beside the original. */

@@ -6,7 +6,10 @@ import {
   approveDocument,
   getContract,
   getDocument,
+  getSettings,
+  setDocumentFileMeta,
 } from '@/lib/db/queries';
+import { contractsRoot, renameContractFolder } from '@/lib/contracts-folder';
 import { FIELDS } from '@/lib/fields';
 import { log } from '@/lib/logger';
 
@@ -55,6 +58,32 @@ export async function POST(_req: Request, ctx: Ctx): Promise<Response> {
     const contractId = approveDocument(id);
     const contract = getContract(contractId);
     if (!contract) throw notFound('contract');
+
+    /*
+     * Now the folder can carry the counterparty's name.
+     *
+     * Approval is the first moment that name is both known and settled: before it,
+     * the counterparty is a machine's guess, and renaming on every re-read would
+     * shuffle her folders around under her while she is still reviewing.
+     *
+     * Deliberately after the approval has been committed, and deliberately unable
+     * to fail it. A record that would not approve because a directory could not be
+     * renamed is a far worse outcome than a folder still named after the file.
+     */
+    const doc = getDocument(id);
+    if (doc !== null && typeof doc.archivePath === 'string' && doc.archivePath !== '') {
+      const moved = renameContractFolder({
+        archivePath: doc.archivePath,
+        counterparty: contract.counterparty,
+        effectiveDate: contract.effectiveDate,
+        filename: doc.filename,
+        root: contractsRoot(getSettings()),
+      });
+      if (moved !== null) {
+        setDocumentFileMeta(id, { archivePath: moved });
+        log.info('document.folder.renamed', { documentId: id, to: moved });
+      }
+    }
 
     log.info('document.approved', { documentId: id, contractId });
     return { contract };

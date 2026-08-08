@@ -1,12 +1,17 @@
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   contractsRoot,
   defaultContractsRoot,
   folderNameFor,
   isInside,
+  renameContractFolder,
   safeFolder,
   textFileHeader,
   uniqueFolder,
@@ -204,5 +209,142 @@ describe('textFileHeader', () => {
       pagesReadRanges: null,
     });
     expect(h).toContain('Nothing here was checked');
+  });
+});
+
+/*
+ * The rename that happens at approval.
+ *
+ * Until this existed the comment in ingest.ts claimed folders were renamed to the
+ * counterparty and nothing did it, so every folder kept the name of the dropped
+ * file and folderNameFor's counterparty branches were dead outside these tests.
+ *
+ * Two of the cases below are the ones that would do damage: the root itself must
+ * never be renamed (a pre-1.2.0 document sits directly in it, and renaming that
+ * would take every other contract with it), and nothing outside the root may be
+ * touched at all.
+ */
+describe('renameContractFolder', () => {
+  let root: string;
+  const dirs: string[] = [];
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'ibc-rename-'));
+    dirs.push(root);
+  });
+
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  function place(folderName: string, file = 'a.pdf'): string {
+    const folder = join(root, folderName);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, file), 'x');
+    return join(folder, file);
+  }
+
+  it('renames the folder to the counterparty and the date', () => {
+    const archivePath = place('Helios_Anode_NDA');
+    const moved = renameContractFolder({
+      archivePath,
+      counterparty: 'Helios Anode Systems, Inc.',
+      effectiveDate: '2024-02-29',
+      filename: 'Helios_Anode_NDA.pdf',
+      root,
+    });
+    expect(moved).toBe(join(root, 'Helios Anode Systems, Inc. - 2024-02-29', 'a.pdf'));
+    expect(existsSync(moved!)).toBe(true);
+    expect(existsSync(archivePath)).toBe(false);
+  });
+
+  it('carries every file in the folder with it, not just the PDF', () => {
+    const archivePath = place('Acme');
+    writeFileSync(join(root, 'Acme', 'What the reader saw.txt'), 'text');
+    const moved = renameContractFolder({
+      archivePath,
+      counterparty: 'Acme Cells GmbH',
+      effectiveDate: null,
+      filename: 'a.pdf',
+      root,
+    });
+    expect(moved).not.toBeNull();
+    expect(existsSync(join(root, 'Acme Cells GmbH', 'What the reader saw.txt'))).toBe(true);
+  });
+
+  it('does nothing when the folder already has the right name', () => {
+    const archivePath = place('Acme Cells GmbH');
+    const moved = renameContractFolder({
+      archivePath,
+      counterparty: 'Acme Cells GmbH',
+      effectiveDate: null,
+      filename: 'a.pdf',
+      root,
+    });
+    expect(moved).toBeNull();
+    expect(existsSync(archivePath)).toBe(true);
+  });
+
+  it('never renames the root itself', () => {
+    // A document archived before 1.2.0 sits directly in the root. Renaming its
+    // "folder" would move every other contract in the tracker along with it.
+    const flat = join(root, 'old-flat.pdf');
+    writeFileSync(flat, 'x');
+    const moved = renameContractFolder({
+      archivePath: flat,
+      counterparty: 'Acme',
+      effectiveDate: null,
+      filename: 'old-flat.pdf',
+      root,
+    });
+    expect(moved).toBeNull();
+    expect(existsSync(flat)).toBe(true);
+    expect(existsSync(root)).toBe(true);
+  });
+
+  it('refuses to touch anything outside the root', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'ibc-outside-'));
+    dirs.push(outside);
+    const folder = join(outside, 'Somewhere');
+    mkdirSync(folder, { recursive: true });
+    const file = join(folder, 'a.pdf');
+    writeFileSync(file, 'x');
+    const moved = renameContractFolder({
+      archivePath: file,
+      counterparty: 'Acme',
+      effectiveDate: null,
+      filename: 'a.pdf',
+      root,
+    });
+    expect(moved).toBeNull();
+    expect(existsSync(file)).toBe(true);
+  });
+
+  it('numbers the folder rather than clobbering an existing one', () => {
+    mkdirSync(join(root, 'Acme'), { recursive: true });
+    writeFileSync(join(root, 'Acme', 'first.pdf'), 'first');
+    const archivePath = place('Second_Drop');
+    const moved = renameContractFolder({
+      archivePath,
+      counterparty: 'Acme',
+      effectiveDate: null,
+      filename: 'a.pdf',
+      root,
+    });
+    expect(moved).toBe(join(root, 'Acme (2)', 'a.pdf'));
+    // The signed contract that was already there is untouched.
+    expect(readFileSync(join(root, 'Acme', 'first.pdf'), 'utf8')).toBe('first');
+  });
+
+  it('returns null rather than throwing when the folder is gone', () => {
+    expect(
+      renameContractFolder({
+        archivePath: join(root, 'Vanished', 'a.pdf'),
+        counterparty: 'Acme',
+        effectiveDate: null,
+        filename: 'a.pdf',
+        root,
+      }),
+    ).toBeNull();
   });
 });
