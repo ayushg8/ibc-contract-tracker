@@ -1172,6 +1172,47 @@ function titleCase(s: string): string {
   return t.length === 0 ? t : t[0]!.toUpperCase() + t.slice(1).toLowerCase();
 }
 
+/**
+ * Ask Claude one plain question and get its text back.
+ *
+ * Narrow on purpose. `extract()` is built for one job -- sixteen evidenced fields
+ * out of a contract -- and everything about it, from the prompt builder to the
+ * response parser to the citation guard, assumes that job. Routing an unrelated
+ * question through it would return field answers to a caller that wanted prose,
+ * which is how a feature ends up silently reading garbage.
+ *
+ * Used only for arranging folders, where the answer is a set of folder NAMES and
+ * nothing it returns can name a path or move a file. Every failure is null: the
+ * caller falls back to telling her it could not be done, never to guessing.
+ */
+export async function askText(prompt: string, timeoutMs = 90_000): Promise<string | null> {
+  const bin = await resolveClaudeBinary();
+  if (bin === null) return null;
+
+  const flags = await probeFlags(bin);
+  if (!flags.canDisableTools) return null;
+
+  if (inFlight >= MAX_CONCURRENCY) return null;
+  inFlight += 1;
+  try {
+    const outcome = await runClaude({
+      bin,
+      argv: buildCliArgv({ modelId: modelFor('balanced').id, flags }),
+      stdin: prompt,
+      timeoutMs,
+      toolsDisabled: flags.canDisableTools,
+    });
+    const classified = classifyCliOutput(outcome);
+    if (classified.kind === 'error') {
+      noteCliFailure(classified.code, classified.limitResetsAt);
+      return null;
+    }
+    return classified.text;
+  } finally {
+    inFlight -= 1;
+  }
+}
+
 /* ───────────────────────────── diagnosis ───────────────────────── */
 
 /**

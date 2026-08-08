@@ -25,23 +25,45 @@ export const dynamic = 'force-dynamic';
 
 interface Body {
   documentId?: unknown;
+  path?: unknown;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
   const root = contractsRoot(getSettings());
 
   let documentId: string | null = null;
+  let wanted: string | null = null;
   try {
     const body: unknown = await request.json();
     if (body !== null && typeof body === 'object') {
       const raw = (body as Body).documentId;
       if (typeof raw === 'string' && raw.trim() !== '') documentId = raw.trim();
+      const p = (body as Body).path;
+      if (typeof p === 'string' && p.trim() !== '') wanted = p.trim();
     }
   } catch {
     // No body means "show me the folder with everything in it".
   }
 
   let target = root;
+
+  /*
+   * A path is accepted, but only one already inside the contracts folder.
+   *
+   * The Files screen needs to open a folder she is looking at, and it knows that
+   * folder by path rather than by document. Allowing it is safe only because the
+   * containment check below is the same one every move goes through: outside the
+   * root is refused outright, so this cannot become a way to open the disk.
+   */
+  if (wanted !== null) {
+    if (!isInside(root, wanted)) {
+      return NextResponse.json(
+        { ok: false, reason: 'That is outside the contracts folder.' },
+        { status: 409 },
+      );
+    }
+    target = wanted;
+  }
 
   if (documentId !== null) {
     const doc = getDocument(documentId);

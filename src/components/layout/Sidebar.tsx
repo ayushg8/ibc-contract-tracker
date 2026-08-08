@@ -1,6 +1,13 @@
 'use client';
 
-import { Archive, ClockCountdown, DownloadSimple, GearSix, Tray } from '@phosphor-icons/react';
+import {
+  Archive,
+  ClockCountdown,
+  DownloadSimple,
+  FolderOpen,
+  GearSix,
+  Tray,
+} from '@phosphor-icons/react';
 
 import { Glass } from '@/components/ui';
 import { EnginePill } from './EnginePill';
@@ -59,6 +66,18 @@ export function Sidebar({ onExport }: SidebarProps) {
           count={data?.expiring ?? null}
           alert
           keys={[KEY.cmd, '3']}
+        />
+        {/*
+          Where the contracts actually sit on disk. A section rather than a
+          setting: she opens it to look at her own folders, which is not
+          something she does once during setup.
+        */}
+        <NavItem
+          href="/files"
+          label="Files"
+          icon={FolderOpen}
+          count={null}
+          keys={[KEY.cmd, '4']}
         />
       </nav>
 
