@@ -20,6 +20,7 @@ const SECTIONS: readonly { prefix: string; title: string }[] = [
   { prefix: '/review', title: 'Review' },
   { prefix: '/repository', title: 'Repository' },
   { prefix: '/expiring', title: 'Expiring' },
+  { prefix: '/files', title: 'Files' },
   { prefix: '/settings', title: 'Settings' },
 ];
 
