@@ -16,7 +16,7 @@ IBC_APP_NAME="IBC Contracts"
 IBC_EXECUTABLE="ibc-contracts"
 IBC_BUNDLE_ID="com.internationalbattery.contract-tracker"
 IBC_AGENT_LABEL="com.internationalbattery.contract-tracker"
-IBC_VERSION="1.2.1"
+IBC_VERSION="1.2.2"
 
 # Pinned so an install today and an install in six months produce the same
 # runtime. 24.x is well past the node:sqlite floor (22.5) the app requires.

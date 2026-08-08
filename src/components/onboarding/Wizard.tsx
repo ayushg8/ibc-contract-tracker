@@ -832,9 +832,16 @@ export function Wizard() {
             }}
           />
           {archiveFailure !== null && <p className="text-callout text-bad">{archiveFailure}</p>}
+          {/*
+            Says only what is true. This used to promise that the tracker would
+            "bring the contracts with it" when the folder moved; nothing does
+            that, and a sentence a system of record cannot honour is worse than
+            no sentence at all -- she would find out by opening the new folder
+            and not finding her contracts in it.
+          */}
           <p className="text-footnote text-label-tertiary">
-            You can move it later in Settings, and the tracker will bring the
-            contracts with it.
+            You can change this later in Settings. Contracts already saved stay
+            where they are.
           </p>
         </Step>
       )}
